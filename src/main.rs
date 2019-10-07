@@ -12,6 +12,7 @@ struct Cpu {
     m_cycle: MCycle,
 }
 
+#[derive(Clone, Copy)]
 enum MCycle {
     M1,
     M2,
@@ -35,51 +36,70 @@ impl Cpu {
     }
 
     fn tick(&mut self) -> BusOp {
-        if let MCycle::M1 = self.m_cycle {
-            BusOp::Read(self.pc)
-        } else {
-            match self.instr {
-                0b01_000_110 => match self.m_cycle {
-                    MCycle::M1 => panic!(),
-                    MCycle::M2 => BusOp::Read(self.hl()),
-                },
-                0b01_110_000 => match self.m_cycle {
-                    MCycle::M1 => panic!(),
-                    MCycle::M2 => BusOp::Write(self.hl(), self.b),
-                },
-                _ => unimplemented!(),
-            }
-        }
+        self.exec_instr(Phase::Tick, None).unwrap()
     }
 
     fn tock(&mut self, data: Option<u8>) {
-        if let MCycle::M1 = self.m_cycle {
-            self.pc += 1;
-            self.instr = data.unwrap();
-        }
-        match self.instr {
-            0b00_000_000 => (),
-            0b01_000_001 => match self.m_cycle {
-                MCycle::M1 => {
-                    self.b = self.c;
-                    self.m_cycle = MCycle::M1
-                }
-                _ => panic!(),
-            },
-            0b01_000_110 => match self.m_cycle {
-                MCycle::M1 => self.m_cycle = MCycle::M2,
-                MCycle::M2 => {
-                    self.b = data.unwrap();
-                    self.m_cycle = MCycle::M1
-                }
-            },
-            0b01_110_000 => match self.m_cycle {
-                MCycle::M1 => self.m_cycle = MCycle::M2,
-                MCycle::M2 => self.m_cycle = MCycle::M1,
-            },
+        self.exec_instr(Phase::Tock, data);
+    }
+
+    #[inline(always)]
+    fn exec_instr(&mut self, phase: Phase, data: Option<u8>) -> Option<BusOp> {
+        match (self.instr, self.m_cycle, phase) {
+            (0b00_000_000, MCycle::M1, Phase::Tick) => Some(BusOp::Read(self.pc)),
+            (0b00_000_000, MCycle::M1, Phase::Tock) => {
+                self.pc += 1;
+                self.instr = data.unwrap();
+                self.m_cycle = MCycle::M1;
+                None
+            }
+            (0b00_000_000, _, _) => panic!(),
+            (0b01_000_001, MCycle::M1, Phase::Tick) => {
+                self.b = self.c;
+                Some(BusOp::Read(self.pc))
+            }
+            (0b01_000_001, MCycle::M1, Phase::Tock) => {
+                self.instr = data.unwrap();
+                self.pc += 1;
+                self.m_cycle = MCycle::M1;
+                None
+            }
+            (0b01_000_001, _, _) => panic!(),
+            (0b01_000_110, MCycle::M1, Phase::Tick) => Some(BusOp::Read(self.hl())),
+            (0b01_000_110, MCycle::M1, Phase::Tock) => {
+                self.b = data.unwrap();
+                self.m_cycle = MCycle::M2;
+                None
+            }
+            (0b01_000_110, MCycle::M2, Phase::Tick) => Some(BusOp::Read(self.pc)),
+            (0b01_000_110, MCycle::M2, Phase::Tock) => {
+                self.instr = data.unwrap();
+                self.pc += 1;
+                self.m_cycle = MCycle::M1;
+                None
+            }
+            (0b01_000_110, _, _) => panic!(),
+            (0b01_110_000, MCycle::M1, Phase::Tick) => Some(BusOp::Write(self.hl(), self.b)),
+            (0b01_110_000, MCycle::M1, Phase::Tock) => {
+                self.m_cycle = MCycle::M2;
+                None
+            }
+            (0b01_110_000, MCycle::M2, Phase::Tick) => Some(BusOp::Read(self.pc)),
+            (0b01_110_000, MCycle::M2, Phase::Tock) => {
+                self.instr = data.unwrap();
+                self.pc += 1;
+                self.m_cycle = MCycle::M1;
+                None
+            }
+            (0b01_110_000, _, _) => panic!(),
             _ => unimplemented!(),
         }
     }
+}
+
+enum Phase {
+    Tick,
+    Tock,
 }
 
 #[derive(Debug, PartialEq)]
@@ -96,8 +116,9 @@ mod tests {
     fn ld_b_c() {
         let mut cpu = Cpu::new();
         cpu.c = 0x42;
+        cpu.instr = 0x41;
         assert_eq!(cpu.tick(), BusOp::Read(0x0000));
-        cpu.tock(Some(0x41));
+        cpu.tock(Some(0x00));
         assert_eq!(cpu.b, 0x42)
     }
 
@@ -106,10 +127,11 @@ mod tests {
         let mut cpu = Cpu::new();
         cpu.h = 0x12;
         cpu.l = 0x34;
-        assert_eq!(cpu.tick(), BusOp::Read(0x0000));
-        cpu.tock(Some(0x46));
+        cpu.instr = 0x46;
         assert_eq!(cpu.tick(), BusOp::Read(0x1234));
         cpu.tock(Some(0x42));
+        assert_eq!(cpu.tick(), BusOp::Read(0x0000));
+        cpu.tock(Some(0x00));
         assert_eq!(cpu.b, 0x42)
     }
 
@@ -119,8 +141,10 @@ mod tests {
         cpu.b = 0x42;
         cpu.h = 0x12;
         cpu.l = 0x34;
-        assert_eq!(cpu.tick(), BusOp::Read(0x0000));
-        cpu.tock(Some(0x70));
+        cpu.instr = 0x70;
         assert_eq!(cpu.tick(), BusOp::Write(0x1234, 0x42));
+        cpu.tock(None);
+        assert_eq!(cpu.tick(), BusOp::Read(0x0000));
+        cpu.tock(Some(0x00));
     }
 }
