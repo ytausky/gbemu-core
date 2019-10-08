@@ -46,6 +46,7 @@ impl Cpu {
     #[inline(always)]
     fn exec_instr(&mut self, phase: Phase, data: Option<u8>) -> Option<BusOp> {
         match (self.instr, self.m_cycle, phase) {
+            // NOP
             (0b00_000_000, MCycle::M1, Phase::Tick) => Some(BusOp::Read(self.pc)),
             (0b00_000_000, MCycle::M1, Phase::Tock) => {
                 self.pc += 1;
@@ -54,6 +55,8 @@ impl Cpu {
                 None
             }
             (0b00_000_000, _, _) => panic!(),
+
+            // LD B,C
             (0b01_000_001, MCycle::M1, Phase::Tick) => {
                 self.b = self.c;
                 Some(BusOp::Read(self.pc))
@@ -65,6 +68,8 @@ impl Cpu {
                 None
             }
             (0b01_000_001, _, _) => panic!(),
+
+            // LD B,(HL)
             (0b01_000_110, MCycle::M1, Phase::Tick) => Some(BusOp::Read(self.hl())),
             (0b01_000_110, MCycle::M1, Phase::Tock) => {
                 self.b = data.unwrap();
@@ -79,6 +84,8 @@ impl Cpu {
                 None
             }
             (0b01_000_110, _, _) => panic!(),
+
+            // LD (HL),B
             (0b01_110_000, MCycle::M1, Phase::Tick) => Some(BusOp::Write(self.hl(), self.b)),
             (0b01_110_000, MCycle::M1, Phase::Tock) => {
                 self.m_cycle = MCycle::M2;
@@ -92,6 +99,7 @@ impl Cpu {
                 None
             }
             (0b01_110_000, _, _) => panic!(),
+
             _ => unimplemented!(),
         }
     }
