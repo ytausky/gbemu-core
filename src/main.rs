@@ -18,6 +18,113 @@ enum MCycle {
     M2,
 }
 
+impl MCycle {
+    #[inline(always)]
+    fn next(self) -> Self {
+        match self {
+            MCycle::M1 => MCycle::M2,
+            MCycle::M2 => panic!(),
+        }
+    }
+}
+
+macro_rules! instrs {
+    (
+        cpu = $cpu:expr, phase = $phase:expr, data = $data:expr;
+        $(
+            $opcode:pat => { $($details:tt)+ }
+        )*
+    ) => {
+        match $cpu.instr {
+            $(
+                $opcode => instrs! {
+                    @opcode
+                    $cpu, $phase, $data;
+                    ;
+                    $($details)*
+                },
+            )*
+            _ => unimplemented!(),
+        }
+    };
+    (
+        @opcode
+        $cpu:expr, $phase:expr, $data:expr;
+        $(
+            $prefix_m_cycle:ident { $($prefix_details:tt)* }
+        )*
+        ;
+        $current_m_cycle:ident { $($current_details:tt)* }
+        $(
+            $tail_m_cycle:ident { $($tail_details:tt)* }
+        )+
+    ) => {
+        instrs! {
+            @opcode
+            $cpu, $phase, $data;
+            $(
+                $prefix_m_cycle { $($prefix_details)* }
+            )*
+            $current_m_cycle { $($current_details)* }
+            ;
+            $(
+                $tail_m_cycle { $($tail_details)* }
+            )*
+        }
+    };
+    (
+        @opcode
+        $cpu:expr, $phase:expr, $data:expr;
+        $(
+            $prefix_m_cycle:ident { $($prefix_details:tt)* }
+        )*
+        ;
+        $last_m_cycle:ident { $($last_details:tt)* }
+    ) => {
+        match $cpu.m_cycle {
+            $(
+                MCycle::$prefix_m_cycle => {
+                    instrs!(
+                        @m_cycle
+                        $cpu, $phase, $data;
+                        $($prefix_details)*;
+                        {};
+                        { $cpu.m_cycle = MCycle::$prefix_m_cycle.next(); None }
+                    )
+                }
+            )*
+            MCycle::$last_m_cycle => {
+                instrs!(
+                    @m_cycle
+                    $cpu, $phase, $data;
+                    $($last_details)*;
+                    { ; Some(BusOp::Read($cpu.pc)) };
+                    {
+                        $cpu.instr = $data.unwrap();
+                        $cpu.pc += 1;
+                        $cpu.m_cycle = MCycle::M1;
+                        None
+                    }
+                )
+            }
+            #[allow(unreachable_patterns)]
+            _ => panic!(),
+        }
+    };
+    (
+        @m_cycle
+        $cpu:expr, $phase:expr, $data:expr;
+        Tick $tick:block Tock $tock:block;
+        { $($tick_epilogue:tt)* };
+        $tock_epilogue:block
+    ) => {
+        match $phase {
+            Phase::Tick => { { Some($tick) } $($tick_epilogue)* }
+            Phase::Tock => { $tock $tock_epilogue }
+        }
+    };
+}
+
 impl Cpu {
     fn new() -> Self {
         Self {
@@ -45,63 +152,31 @@ impl Cpu {
 
     #[inline(always)]
     fn exec_instr(&mut self, phase: Phase, data: Option<u8>) -> Option<BusOp> {
-        match (self.instr, self.m_cycle, phase) {
+        instrs!(
+            cpu = self, phase = phase, data = data;
+
             // NOP
-            (0b00_000_000, MCycle::M1, Phase::Tick) => Some(BusOp::Read(self.pc)),
-            (0b00_000_000, MCycle::M1, Phase::Tock) => {
-                self.pc += 1;
-                self.instr = data.unwrap();
-                self.m_cycle = MCycle::M1;
-                None
+            0b00_000_000 => {
+                M1 { Tick {} Tock {} }
             }
-            (0b00_000_000, _, _) => panic!(),
 
             // LD B,C
-            (0b01_000_001, MCycle::M1, Phase::Tick) => {
-                self.b = self.c;
-                Some(BusOp::Read(self.pc))
+            0b01_000_001 => {
+                M1 { Tick {} Tock { self.b = self.c } }
             }
-            (0b01_000_001, MCycle::M1, Phase::Tock) => {
-                self.instr = data.unwrap();
-                self.pc += 1;
-                self.m_cycle = MCycle::M1;
-                None
-            }
-            (0b01_000_001, _, _) => panic!(),
 
             // LD B,(HL)
-            (0b01_000_110, MCycle::M1, Phase::Tick) => Some(BusOp::Read(self.hl())),
-            (0b01_000_110, MCycle::M1, Phase::Tock) => {
-                self.b = data.unwrap();
-                self.m_cycle = MCycle::M2;
-                None
+            0b01_000_110 => {
+                M1 { Tick { BusOp::Read(self.hl()) } Tock { self.b = data.unwrap() }}
+                M2 { Tick {} Tock {} }
             }
-            (0b01_000_110, MCycle::M2, Phase::Tick) => Some(BusOp::Read(self.pc)),
-            (0b01_000_110, MCycle::M2, Phase::Tock) => {
-                self.instr = data.unwrap();
-                self.pc += 1;
-                self.m_cycle = MCycle::M1;
-                None
-            }
-            (0b01_000_110, _, _) => panic!(),
 
             // LD (HL),B
-            (0b01_110_000, MCycle::M1, Phase::Tick) => Some(BusOp::Write(self.hl(), self.b)),
-            (0b01_110_000, MCycle::M1, Phase::Tock) => {
-                self.m_cycle = MCycle::M2;
-                None
+            0b01_110_000 => {
+                M1 { Tick { BusOp::Write(self.hl(), self.b) } Tock {} }
+                M2 { Tick {} Tock {} }
             }
-            (0b01_110_000, MCycle::M2, Phase::Tick) => Some(BusOp::Read(self.pc)),
-            (0b01_110_000, MCycle::M2, Phase::Tock) => {
-                self.instr = data.unwrap();
-                self.pc += 1;
-                self.m_cycle = MCycle::M1;
-                None
-            }
-            (0b01_110_000, _, _) => panic!(),
-
-            _ => unimplemented!(),
-        }
+        )
     }
 }
 
