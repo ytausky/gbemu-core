@@ -8,6 +8,7 @@ struct Cpu {
     h: u8,
     l: u8,
     pc: u16,
+    sp: u16,
     instr: u8,
     m_cycle: MCycle,
 }
@@ -16,6 +17,8 @@ struct Cpu {
 enum MCycle {
     M1,
     M2,
+    M3,
+    M4,
 }
 
 impl MCycle {
@@ -23,7 +26,9 @@ impl MCycle {
     fn next(self) -> Self {
         match self {
             MCycle::M1 => MCycle::M2,
-            MCycle::M2 => panic!(),
+            MCycle::M2 => MCycle::M3,
+            MCycle::M3 => MCycle::M4,
+            MCycle::M4 => panic!(),
         }
     }
 }
@@ -119,7 +124,7 @@ macro_rules! instrs {
         $tock_epilogue:block
     ) => {
         match $phase {
-            Phase::Tick => { { Some($tick) } $($tick_epilogue)* }
+            Phase::Tick => { { $tick } $($tick_epilogue)* }
             Phase::Tock => { $tock $tock_epilogue }
         }
     };
@@ -133,6 +138,7 @@ impl Cpu {
             h: 0x00,
             l: 0x00,
             pc: 0x0000,
+            sp: 0x0000,
             instr: 0x00,
             m_cycle: MCycle::M1,
         }
@@ -142,8 +148,8 @@ impl Cpu {
         (u16::from(self.h) << 8) + u16::from(self.l)
     }
 
-    fn tick(&mut self) -> BusOp {
-        self.exec_instr(Phase::Tick, None).unwrap()
+    fn tick(&mut self) -> Option<BusOp> {
+        self.exec_instr(Phase::Tick, None)
     }
 
     fn tock(&mut self, data: Option<u8>) {
@@ -167,14 +173,34 @@ impl Cpu {
 
             // LD B,(HL)
             0b01_000_110 => {
-                M1 { Tick { BusOp::Read(self.hl()) } Tock { self.b = data.unwrap() }}
+                M1 { Tick { Some(BusOp::Read(self.hl())) } Tock { self.b = data.unwrap() }}
                 M2 { Tick {} Tock {} }
             }
 
             // LD (HL),B
             0b01_110_000 => {
-                M1 { Tick { BusOp::Write(self.hl(), self.b) } Tock {} }
+                M1 { Tick { Some(BusOp::Write(self.hl(), self.b)) } Tock {} }
                 M2 { Tick {} Tock {} }
+            }
+
+            // RET
+            0b11_001_001 => {
+                M1 {
+                    Tick { Some(BusOp::Read(self.sp)) }
+                    Tock {
+                        self.pc = data.unwrap().into();
+                        self.sp += 1
+                    }
+                }
+                M2 {
+                    Tick { Some(BusOp::Read(self.sp)) }
+                    Tock {
+                        self.pc |= u16::from(data.unwrap()) << 8;
+                        self.sp += 1
+                    }
+                }
+                M3 { Tick { None } Tock {} }
+                M4 { Tick {} Tock {} }
             }
         )
     }
@@ -200,7 +226,7 @@ mod tests {
         let mut cpu = Cpu::new();
         cpu.c = 0x42;
         cpu.instr = 0x41;
-        assert_eq!(cpu.tick(), BusOp::Read(0x0000));
+        assert_eq!(cpu.tick(), Some(BusOp::Read(0x0000)));
         cpu.tock(Some(0x00));
         assert_eq!(cpu.b, 0x42)
     }
@@ -211,9 +237,9 @@ mod tests {
         cpu.h = 0x12;
         cpu.l = 0x34;
         cpu.instr = 0x46;
-        assert_eq!(cpu.tick(), BusOp::Read(0x1234));
+        assert_eq!(cpu.tick(), Some(BusOp::Read(0x1234)));
         cpu.tock(Some(0x42));
-        assert_eq!(cpu.tick(), BusOp::Read(0x0000));
+        assert_eq!(cpu.tick(), Some(BusOp::Read(0x0000)));
         cpu.tock(Some(0x00));
         assert_eq!(cpu.b, 0x42)
     }
@@ -225,9 +251,28 @@ mod tests {
         cpu.h = 0x12;
         cpu.l = 0x34;
         cpu.instr = 0x70;
-        assert_eq!(cpu.tick(), BusOp::Write(0x1234, 0x42));
+        assert_eq!(cpu.tick(), Some(BusOp::Write(0x1234, 0x42)));
         cpu.tock(None);
-        assert_eq!(cpu.tick(), BusOp::Read(0x0000));
+        assert_eq!(cpu.tick(), Some(BusOp::Read(0x0000)));
         cpu.tock(Some(0x00));
+    }
+
+    #[test]
+    fn ret() {
+        let mut cpu = Cpu::new();
+        cpu.sp = 0x1234;
+        cpu.instr = 0xc9;
+        assert_eq!(cpu.tick(), Some(BusOp::Read(0x1234)));
+        cpu.tock(Some(0x78));
+        assert_eq!(cpu.tick(), Some(BusOp::Read(0x1235)));
+        cpu.tock(Some(0x56));
+
+        // M3 doesn't do any bus operation (according to LIJI32 and gekkio)
+        assert_eq!(cpu.tick(), None);
+        cpu.tock(None);
+
+        assert_eq!(cpu.tick(), Some(BusOp::Read(0x5678)));
+        cpu.tock(Some(0x00));
+        assert_eq!(cpu.sp, 0x1236)
     }
 }
