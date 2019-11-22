@@ -33,103 +33,6 @@ impl MCycle {
     }
 }
 
-macro_rules! instrs {
-    (
-        cpu = $cpu:expr, phase = $phase:expr, data = $data:expr;
-        $(
-            $opcode:pat => { $($details:tt)+ }
-        )*
-    ) => {
-        match $cpu.instr {
-            $(
-                $opcode => instrs! {
-                    @opcode
-                    $cpu, $phase, $data;
-                    ;
-                    $($details)*
-                },
-            )*
-            _ => unimplemented!(),
-        }
-    };
-    (
-        @opcode
-        $cpu:expr, $phase:expr, $data:expr;
-        $(
-            $prefix_m_cycle:ident { $($prefix_details:tt)* }
-        )*
-        ;
-        $current_m_cycle:ident { $($current_details:tt)* }
-        $(
-            $tail_m_cycle:ident { $($tail_details:tt)* }
-        )+
-    ) => {
-        instrs! {
-            @opcode
-            $cpu, $phase, $data;
-            $(
-                $prefix_m_cycle { $($prefix_details)* }
-            )*
-            $current_m_cycle { $($current_details)* }
-            ;
-            $(
-                $tail_m_cycle { $($tail_details)* }
-            )*
-        }
-    };
-    (
-        @opcode
-        $cpu:expr, $phase:expr, $data:expr;
-        $(
-            $prefix_m_cycle:ident { $($prefix_details:tt)* }
-        )*
-        ;
-        $last_m_cycle:ident { $($last_details:tt)* }
-    ) => {
-        match $cpu.m_cycle {
-            $(
-                MCycle::$prefix_m_cycle => {
-                    instrs!(
-                        @m_cycle
-                        $cpu, $phase, $data;
-                        $($prefix_details)*;
-                        {};
-                        { $cpu.m_cycle = MCycle::$prefix_m_cycle.next(); None }
-                    )
-                }
-            )*
-            MCycle::$last_m_cycle => {
-                instrs!(
-                    @m_cycle
-                    $cpu, $phase, $data;
-                    $($last_details)*;
-                    { ; Some(BusOp::Read($cpu.pc)) };
-                    {
-                        $cpu.instr = $data.unwrap();
-                        $cpu.pc += 1;
-                        $cpu.m_cycle = MCycle::M1;
-                        None
-                    }
-                )
-            }
-            #[allow(unreachable_patterns)]
-            _ => panic!(),
-        }
-    };
-    (
-        @m_cycle
-        $cpu:expr, $phase:expr, $data:expr;
-        Tick $tick:block Tock $tock:block;
-        { $($tick_epilogue:tt)* };
-        $tock_epilogue:block
-    ) => {
-        match $phase {
-            Phase::Tick => { { $tick } $($tick_epilogue)* }
-            Phase::Tock => { $tock $tock_epilogue }
-        }
-    };
-}
-
 impl Cpu {
     fn new() -> Self {
         Self {
@@ -149,60 +52,131 @@ impl Cpu {
     }
 
     fn tick(&mut self) -> Option<BusOp> {
-        self.exec_instr(Phase::Tick, None)
+        self.exec_instr(CpuInput {
+            phase: Phase::Tick,
+            data: None,
+        })
     }
 
     fn tock(&mut self, data: Option<u8>) {
-        self.exec_instr(Phase::Tock, data);
+        self.exec_instr(CpuInput {
+            phase: Phase::Tock,
+            data,
+        });
     }
 
     #[inline(always)]
-    fn exec_instr(&mut self, phase: Phase, data: Option<u8>) -> Option<BusOp> {
-        instrs!(
-            cpu = self, phase = phase, data = data;
+    fn exec_instr(&mut self, input: CpuInput) -> Option<BusOp> {
+        match self.instr {
+            0b00_000_000 => self.nop(input),
+            0b01_000_001 => self.ld_r_r::<B, C>(input),
+            0b01_000_110 => self.ld_r_deref_hl::<B>(input),
+            0b01_110_000 => self.ld_deref_hl_r::<B>(input),
+            0b11_001_001 => self.ret(input),
+            _ => unimplemented!(),
+        }
+    }
 
-            // NOP
-            0b00_000_000 => {
-                M1 { Tick {} Tock {} }
-            }
+    fn nop(&mut self, input: CpuInput) -> Option<BusOp> {
+        self.fetch(input)
+    }
 
-            // LD B,C
-            0b01_000_001 => {
-                M1 { Tick {} Tock { self.b = self.c } }
-            }
+    fn ld_r_r<D: Reg, S: Reg>(&mut self, input: CpuInput) -> Option<BusOp> {
+        if let Phase::Tock = input.phase {
+            let value = *S::access(self);
+            *D::access(self) = value;
+        }
+        self.fetch(input)
+    }
 
-            // LD B,(HL)
-            0b01_000_110 => {
-                M1 { Tick { Some(BusOp::Read(self.hl())) } Tock { self.b = data.unwrap() }}
-                M2 { Tick {} Tock {} }
-            }
-
-            // LD (HL),B
-            0b01_110_000 => {
-                M1 { Tick { Some(BusOp::Write(self.hl(), self.b)) } Tock {} }
-                M2 { Tick {} Tock {} }
-            }
-
-            // RET
-            0b11_001_001 => {
-                M1 {
-                    Tick { Some(BusOp::Read(self.sp)) }
-                    Tock {
-                        self.pc = data.unwrap().into();
-                        self.sp += 1
-                    }
+    fn ld_r_deref_hl<D: Reg>(&mut self, input: CpuInput) -> Option<BusOp> {
+        match self.m_cycle {
+            MCycle::M1 => match input.phase {
+                Phase::Tick => Some(BusOp::Read(self.hl())),
+                Phase::Tock => {
+                    *D::access(self) = input.data.unwrap();
+                    self.advance()
                 }
-                M2 {
-                    Tick { Some(BusOp::Read(self.sp)) }
-                    Tock {
-                        self.pc |= u16::from(data.unwrap()) << 8;
-                        self.sp += 1
-                    }
+            },
+            _ => self.fetch(input),
+        }
+    }
+
+    fn ld_deref_hl_r<S: Reg>(&mut self, input: CpuInput) -> Option<BusOp> {
+        match self.m_cycle {
+            MCycle::M1 => match input.phase {
+                Phase::Tick => Some(BusOp::Write(self.hl(), *S::access(self))),
+                Phase::Tock => self.advance(),
+            },
+            _ => self.fetch(input),
+        }
+    }
+
+    fn ret(&mut self, input: CpuInput) -> Option<BusOp> {
+        match self.m_cycle {
+            MCycle::M1 => match input.phase {
+                Phase::Tick => Some(BusOp::Read(self.sp)),
+                Phase::Tock => {
+                    self.pc = input.data.unwrap().into();
+                    self.sp += 1;
+                    self.advance()
                 }
-                M3 { Tick { None } Tock {} }
-                M4 { Tick {} Tock {} }
             }
-        )
+            MCycle::M2 => match input.phase {
+                Phase::Tick => Some(BusOp::Read(self.sp)),
+                Phase::Tock => {
+                    self.pc |= u16::from(input.data.unwrap()) << 8;
+                    self.sp += 1;
+                    self.advance()
+                }
+            }
+            MCycle::M3 => match input.phase {
+                Phase::Tick => None,
+                Phase::Tock => self.advance(),
+            }
+            _ => self.fetch(input),
+        }
+    }
+
+    fn advance(&mut self) -> Option<BusOp> {
+        self.m_cycle = self.m_cycle.next();
+        None
+    }
+
+    fn fetch(&mut self, input: CpuInput) -> Option<BusOp> {
+        match input.phase {
+            Phase::Tick => Some(BusOp::Read(self.pc)),
+            Phase::Tock => {
+                self.instr = input.data.unwrap();
+                self.pc += 1;
+                self.m_cycle = MCycle::M1;
+                None
+            }
+        }
+    }
+}
+
+struct CpuInput {
+    phase: Phase,
+    data: Option<u8>,
+}
+
+trait Reg {
+    fn access(cpu: &mut Cpu) -> &mut u8;
+}
+
+struct B;
+struct C;
+
+impl Reg for B {
+    fn access(cpu: &mut Cpu) -> &mut u8 {
+        &mut cpu.b
+    }
+}
+
+impl Reg for C {
+    fn access(cpu: &mut Cpu) -> &mut u8 {
+        &mut cpu.c
     }
 }
 
