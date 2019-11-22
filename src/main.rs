@@ -2,7 +2,7 @@ fn main() {
     println!("Hello, world!");
 }
 
-struct Cpu {
+pub struct Cpu {
     b: u8,
     c: u8,
     h: u8,
@@ -33,8 +33,8 @@ impl MCycle {
     }
 }
 
-impl Cpu {
-    fn new() -> Self {
+impl Default for Cpu {
+    fn default() -> Self {
         Self {
             b: 0x00,
             c: 0x00,
@@ -46,19 +46,21 @@ impl Cpu {
             m_cycle: MCycle::M1,
         }
     }
+}
 
+impl Cpu {
     fn hl(&self) -> u16 {
         (u16::from(self.h) << 8) + u16::from(self.l)
     }
 
-    fn tick(&mut self) -> Option<BusOp> {
+    pub fn tick(&mut self) -> Option<BusOp> {
         self.exec_instr(CpuInput {
             phase: Phase::Tick,
             data: None,
         })
     }
 
-    fn tock(&mut self, data: Option<u8>) {
+    pub fn tock(&mut self, data: Option<u8>) {
         self.exec_instr(CpuInput {
             phase: Phase::Tock,
             data,
@@ -186,7 +188,7 @@ enum Phase {
 }
 
 #[derive(Debug, PartialEq)]
-enum BusOp {
+pub enum BusOp {
     Read(u16),
     Write(u16, u8),
 }
@@ -197,7 +199,7 @@ mod tests {
 
     #[test]
     fn ld_b_c() {
-        let mut cpu = Cpu::new();
+        let mut cpu = Cpu::default();
         cpu.c = 0x42;
         cpu.instr = 0x41;
         assert_eq!(cpu.tick(), Some(BusOp::Read(0x0000)));
@@ -207,7 +209,7 @@ mod tests {
 
     #[test]
     fn ld_b_deref_hl() {
-        let mut cpu = Cpu::new();
+        let mut cpu = Cpu::default();
         cpu.h = 0x12;
         cpu.l = 0x34;
         cpu.instr = 0x46;
@@ -220,7 +222,7 @@ mod tests {
 
     #[test]
     fn ld_deref_hl_b() {
-        let mut cpu = Cpu::new();
+        let mut cpu = Cpu::default();
         cpu.b = 0x42;
         cpu.h = 0x12;
         cpu.l = 0x34;
@@ -233,7 +235,7 @@ mod tests {
 
     #[test]
     fn ret() {
-        let mut cpu = Cpu::new();
+        let mut cpu = Cpu::default();
         cpu.sp = 0x1234;
         cpu.instr = 0xc9;
         assert_eq!(cpu.tick(), Some(BusOp::Read(0x1234)));
