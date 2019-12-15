@@ -71,7 +71,10 @@ impl Cpu {
     fn exec_instr(&mut self, input: CpuInput) -> Option<BusOp> {
         match self.instr {
             0b00_000_000 => self.nop(input),
+            0b01_000_000 => self.ld_r_r::<B, B>(input),
             0b01_000_001 => self.ld_r_r::<B, C>(input),
+            0b01_001_000 => self.ld_r_r::<C, B>(input),
+            0b01_001_001 => self.ld_r_r::<C, C>(input),
             0b01_000_110 => self.ld_r_deref_hl::<B>(input),
             0b01_110_000 => self.ld_deref_hl_r::<B>(input),
             0b11_001_001 => self.ret(input),
@@ -85,8 +88,8 @@ impl Cpu {
 
     fn ld_r_r<D: Reg, S: Reg>(&mut self, input: CpuInput) -> Option<BusOp> {
         if let Phase::Tock = input.phase {
-            let value = *S::access(self);
-            *D::access(self) = value;
+            let value = *self.reg(S::CODE);
+            *self.reg(D::CODE) = value;
         }
         self.fetch(input)
     }
@@ -96,7 +99,7 @@ impl Cpu {
             MCycle::M1 => match input.phase {
                 Phase::Tick => Some(BusOp::Read(self.hl())),
                 Phase::Tock => {
-                    *D::access(self) = input.data.unwrap();
+                    *self.reg(D::CODE) = input.data.unwrap();
                     self.advance()
                 }
             },
@@ -107,7 +110,7 @@ impl Cpu {
     fn ld_deref_hl_r<S: Reg>(&mut self, input: CpuInput) -> Option<BusOp> {
         match self.m_cycle {
             MCycle::M1 => match input.phase {
-                Phase::Tick => Some(BusOp::Write(self.hl(), *S::access(self))),
+                Phase::Tick => Some(BusOp::Write(self.hl(), *self.reg(S::CODE))),
                 Phase::Tock => self.advance(),
             },
             _ => self.fetch(input),
@@ -140,6 +143,13 @@ impl Cpu {
         }
     }
 
+    fn reg(&mut self, r: R) -> &mut u8 {
+        match r {
+            R::B => &mut self.b,
+            R::C => &mut self.c,
+        }
+    }
+
     fn advance(&mut self) -> Option<BusOp> {
         self.m_cycle = self.m_cycle.next();
         None
@@ -163,23 +173,25 @@ struct CpuInput {
     data: Option<u8>,
 }
 
+#[derive(Clone, Copy)]
+enum R {
+    B,
+    C,
+}
+
 trait Reg {
-    fn access(cpu: &mut Cpu) -> &mut u8;
+    const CODE: R;
 }
 
 struct B;
 struct C;
 
 impl Reg for B {
-    fn access(cpu: &mut Cpu) -> &mut u8 {
-        &mut cpu.b
-    }
+    const CODE: R = R::B;
 }
 
 impl Reg for C {
-    fn access(cpu: &mut Cpu) -> &mut u8 {
-        &mut cpu.c
-    }
+    const CODE: R = R::C;
 }
 
 enum Phase {
@@ -197,14 +209,38 @@ pub enum BusOp {
 mod tests {
     use super::*;
 
+    const RS: &[R] = &[R::B];
+
     #[test]
-    fn ld_b_c() {
+    fn ld_r_r() {
+        for &dest in RS {
+            for &src in RS {
+                test_ld_r_r(dest, src)
+            }
+        }
+    }
+
+    fn test_ld_r_r(dest: R, src: R) {
         let mut cpu = Cpu::default();
-        cpu.c = 0x42;
-        cpu.instr = 0x41;
+        let expected = 0x42;
+        cpu.instr = encode_ld_r_r(dest, src);
+        *cpu.reg(src) = expected;
         assert_eq!(cpu.tick(), Some(BusOp::Read(0x0000)));
         cpu.tock(Some(0x00));
-        assert_eq!(cpu.b, 0x42)
+        assert_eq!(*cpu.reg(dest), expected)
+    }
+
+    fn encode_ld_r_r(dest: R, src: R) -> u8 {
+        0b01_000_000 | (dest.code() << 3) | src.code()
+    }
+
+    impl R {
+        fn code(self) -> u8 {
+            match self {
+                R::B => 0b000,
+                R::C => 0b001,
+            }
+        }
     }
 
     #[test]
