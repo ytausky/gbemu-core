@@ -69,10 +69,13 @@ impl Cpu {
     }
 
     pub fn tock(&mut self, data: Option<u8>) {
-        self.exec_instr(CpuInput {
-            phase: Phase::Tock,
-            data,
-        });
+        assert_eq!(
+            self.exec_instr(CpuInput {
+                phase: Phase::Tock,
+                data,
+            }),
+            None
+        )
     }
 
     #[inline(always)]
