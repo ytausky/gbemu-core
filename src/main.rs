@@ -1,3 +1,5 @@
+use self::{MCycle::*, Phase::*};
+
 fn main() {
     println!("Hello, world!");
 }
@@ -151,33 +153,35 @@ impl Cpu {
     }
 
     fn ld_r_r<D: Reg, S: Reg>(&mut self, input: CpuInput) -> Option<BusOp> {
-        if let Phase::Tock = input.phase {
-            let value = *self.reg(S::CODE);
-            *self.reg(D::CODE) = value;
+        match (self.m_cycle, input.phase) {
+            (M1, Tick) => self.fetch(input),
+            (M1, Tock) => {
+                let value = *self.reg(S::CODE);
+                *self.reg(D::CODE) = value;
+                self.fetch(input)
+            }
+            _ => unreachable!(),
         }
-        self.fetch(input)
     }
 
     fn ld_r_deref_hl<D: Reg>(&mut self, input: CpuInput) -> Option<BusOp> {
-        match self.m_cycle {
-            MCycle::M1 => match input.phase {
-                Phase::Tick => Some(BusOp::Read(self.hl())),
-                Phase::Tock => {
-                    *self.reg(D::CODE) = input.data.unwrap();
-                    self.advance()
-                }
-            },
-            _ => self.fetch(input),
+        match (self.m_cycle, input.phase) {
+            (M1, Tick) => Some(BusOp::Read(self.hl())),
+            (M1, Tock) => {
+                *self.reg(D::CODE) = input.data.unwrap();
+                self.advance(input)
+            }
+            (M2, _) => self.fetch(input),
+            _ => unreachable!(),
         }
     }
 
     fn ld_deref_hl_r<S: Reg>(&mut self, input: CpuInput) -> Option<BusOp> {
-        match self.m_cycle {
-            MCycle::M1 => match input.phase {
-                Phase::Tick => Some(BusOp::Write(self.hl(), *self.reg(S::CODE))),
-                Phase::Tock => self.advance(),
-            },
-            _ => self.fetch(input),
+        match (self.m_cycle, input.phase) {
+            (M1, Tick) => Some(BusOp::Write(self.hl(), *self.reg(S::CODE))),
+            (M1, Tock) => self.advance(input),
+            (M2, _) => self.fetch(input),
+            _ => unreachable!(),
         }
     }
 
@@ -186,28 +190,21 @@ impl Cpu {
     }
 
     fn ret(&mut self, input: CpuInput) -> Option<BusOp> {
-        match self.m_cycle {
-            MCycle::M1 => match input.phase {
-                Phase::Tick => Some(BusOp::Read(self.sp)),
-                Phase::Tock => {
-                    self.pc = input.data.unwrap().into();
-                    self.sp += 1;
-                    self.advance()
-                }
-            },
-            MCycle::M2 => match input.phase {
-                Phase::Tick => Some(BusOp::Read(self.sp)),
-                Phase::Tock => {
-                    self.pc |= u16::from(input.data.unwrap()) << 8;
-                    self.sp += 1;
-                    self.advance()
-                }
-            },
-            MCycle::M3 => match input.phase {
-                Phase::Tick => None,
-                Phase::Tock => self.advance(),
-            },
-            _ => self.fetch(input),
+        match (self.m_cycle, input.phase) {
+            (M1, Tick) => Some(BusOp::Read(self.sp)),
+            (M1, Tock) => {
+                self.pc = input.data.unwrap().into();
+                self.sp += 1;
+                self.advance(input)
+            }
+            (M2, Tick) => Some(BusOp::Read(self.sp)),
+            (M2, Tock) => {
+                self.pc |= u16::from(input.data.unwrap()) << 8;
+                self.sp += 1;
+                self.advance(input)
+            }
+            (M3, _) => self.advance(input),
+            (M4, _) => self.fetch(input),
         }
     }
 
@@ -223,8 +220,10 @@ impl Cpu {
         }
     }
 
-    fn advance(&mut self) -> Option<BusOp> {
-        self.m_cycle = self.m_cycle.next();
+    fn advance(&mut self, input: CpuInput) -> Option<BusOp> {
+        if let Tock = input.phase {
+            self.m_cycle = self.m_cycle.next()
+        }
         None
     }
 
@@ -297,6 +296,7 @@ impl Reg for L {
     const CODE: R = R::L;
 }
 
+#[derive(Clone, Copy)]
 enum Phase {
     Tick,
     Tock,
