@@ -4,10 +4,10 @@ fn main() {
     println!("Hello, world!");
 }
 
+#[derive(Default)]
 pub struct Cpu {
     regs: Regs,
-    opcode: Opcode,
-    m_cycle: MCycle,
+    ctrl: RunningState,
 }
 
 struct Regs {
@@ -20,6 +20,11 @@ struct Regs {
     l: u8,
     pc: u16,
     sp: u16,
+}
+
+struct RunningState {
+    opcode: Opcode,
+    m_cycle: MCycle,
 }
 
 #[derive(Clone, Copy)]
@@ -51,16 +56,6 @@ impl MCycle {
     }
 }
 
-impl Default for Cpu {
-    fn default() -> Self {
-        Self {
-            regs: Default::default(),
-            opcode: Opcode(0x00),
-            m_cycle: MCycle::M1,
-        }
-    }
-}
-
 impl Default for Regs {
     fn default() -> Self {
         Self {
@@ -73,6 +68,15 @@ impl Default for Regs {
             l: 0x00,
             pc: 0x0000,
             sp: 0x0000,
+        }
+    }
+}
+
+impl Default for RunningState {
+    fn default() -> Self {
+        Self {
+            opcode: Opcode(0x00),
+            m_cycle: MCycle::M1,
         }
     }
 }
@@ -115,7 +119,7 @@ impl Cpu {
 
     #[inline(always)]
     fn exec_instr(&mut self, input: CpuInput) -> Option<BusOp> {
-        match self.opcode.split() {
+        match self.ctrl.opcode.split() {
             (0b00, 0b000, 0b000) => self.nop(input),
             (0b01, 0b110, 0b110) => self.halt(input),
             (0b01, 0b110, src) => self.ld_deref_hl_r(src.into(), input),
@@ -131,7 +135,7 @@ impl Cpu {
     }
 
     fn ld_r_r(&mut self, dest: R, src: R, input: CpuInput) -> Option<BusOp> {
-        match (self.m_cycle, input.phase) {
+        match (self.ctrl.m_cycle, input.phase) {
             (M1, Tick) => self.fetch(input),
             (M1, Tock) => {
                 let value = *self.regs.reg(src);
@@ -143,7 +147,7 @@ impl Cpu {
     }
 
     fn ld_r_deref_hl(&mut self, dest: R, input: CpuInput) -> Option<BusOp> {
-        match (self.m_cycle, input.phase) {
+        match (self.ctrl.m_cycle, input.phase) {
             (M1, Tick) => Some(BusOp::Read(self.regs.hl())),
             (M1, Tock) => {
                 *self.regs.reg(dest) = input.data.unwrap();
@@ -155,7 +159,7 @@ impl Cpu {
     }
 
     fn ld_deref_hl_r(&mut self, src: R, input: CpuInput) -> Option<BusOp> {
-        match (self.m_cycle, input.phase) {
+        match (self.ctrl.m_cycle, input.phase) {
             (M1, Tick) => Some(BusOp::Write(self.regs.hl(), *self.regs.reg(src))),
             (M1, Tock) => self.advance(input),
             (M2, _) => self.fetch(input),
@@ -168,7 +172,7 @@ impl Cpu {
     }
 
     fn ret(&mut self, input: CpuInput) -> Option<BusOp> {
-        match (self.m_cycle, input.phase) {
+        match (self.ctrl.m_cycle, input.phase) {
             (M1, Tick) => Some(BusOp::Read(self.regs.sp)),
             (M1, Tock) => {
                 self.regs.pc = input.data.unwrap().into();
@@ -188,7 +192,7 @@ impl Cpu {
 
     fn advance(&mut self, input: CpuInput) -> Option<BusOp> {
         if let Tock = input.phase {
-            self.m_cycle = self.m_cycle.next()
+            self.ctrl.m_cycle = self.ctrl.m_cycle.next()
         }
         None
     }
@@ -197,9 +201,9 @@ impl Cpu {
         match input.phase {
             Phase::Tick => Some(BusOp::Read(self.regs.pc)),
             Phase::Tock => {
-                self.opcode = Opcode(input.data.unwrap());
+                self.ctrl.opcode = Opcode(input.data.unwrap());
                 self.regs.pc += 1;
-                self.m_cycle = MCycle::M1;
+                self.ctrl.m_cycle = MCycle::M1;
                 None
             }
         }
@@ -267,7 +271,7 @@ mod tests {
     fn test_ld_r_r(dest: R, src: R) {
         let mut cpu = Cpu::default();
         let expected = 0x42;
-        cpu.opcode = encode_ld_r_r(dest, src);
+        cpu.ctrl.opcode = encode_ld_r_r(dest, src);
         *cpu.regs.reg(src) = expected;
         assert_eq!(cpu.tick(), Some(BusOp::Read(0x0000)));
         cpu.tock(Some(0x00));
@@ -304,7 +308,7 @@ mod tests {
         let expected = 0x42;
         cpu.regs.h = 0x12;
         cpu.regs.l = 0x34;
-        cpu.opcode = encode_ld_r_deref_hl(dest);
+        cpu.ctrl.opcode = encode_ld_r_deref_hl(dest);
         assert_eq!(cpu.tick(), Some(BusOp::Read(0x1234)));
         cpu.tock(Some(expected));
         assert_eq!(cpu.tick(), Some(BusOp::Read(0x0000)));
@@ -330,7 +334,7 @@ mod tests {
         cpu.regs.h = 0x12;
         cpu.regs.l = 0x34;
         *cpu.regs.reg(src) = expected;
-        cpu.opcode = encode_ld_deref_hl_r(src);
+        cpu.ctrl.opcode = encode_ld_deref_hl_r(src);
         assert_eq!(cpu.tick(), Some(BusOp::Write(cpu.regs.hl(), expected)));
         cpu.tock(None);
         assert_eq!(cpu.tick(), Some(BusOp::Read(0x0000)));
@@ -345,7 +349,7 @@ mod tests {
     fn ret() {
         let mut cpu = Cpu::default();
         cpu.regs.sp = 0x1234;
-        cpu.opcode = Opcode(0xc9);
+        cpu.ctrl.opcode = Opcode(0xc9);
         assert_eq!(cpu.tick(), Some(BusOp::Read(0x1234)));
         cpu.tock(Some(0x78));
         assert_eq!(cpu.tick(), Some(BusOp::Read(0x1235)));
