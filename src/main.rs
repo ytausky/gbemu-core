@@ -114,12 +114,12 @@ impl Regs {
 }
 
 impl Cpu {
-    pub fn step(&mut self, input: CpuInput) -> Option<BusOp> {
+    pub fn step(&mut self, input: &CpuInput) -> Option<BusOp> {
         match &mut self.state {
             CpuState::Running(state) => RunningCpu {
                 regs: &mut self.regs,
                 state,
-                input: &input,
+                input,
             }
             .exec_instr(),
         }
@@ -305,14 +305,16 @@ mod tests {
 
     fn test_ld_r_r(dest: R, src: R) {
         let mut cpu = Cpu::default();
-        let expected = 0x42;
-        let opcode = encode_ld_r_r(dest, src);
-        *cpu.regs.reg(src) = expected;
-        assert_eq!(cpu.step(CpuInput { data: None }), Some(BusOp::Read(0x0000)));
-        assert_eq!(cpu.step(CpuInput { data: Some(opcode) }), None);
-        assert_eq!(cpu.step(CpuInput { data: None }), Some(BusOp::Read(0x0001)));
-        assert_eq!(cpu.step(CpuInput { data: Some(0x00) }), None);
-        assert_eq!(*cpu.regs.reg(dest), expected)
+        let data = 0x42;
+        *cpu.regs.reg(src) = data;
+        cpu.test_opcode(
+            encode_ld_r_r(dest, src),
+            &[
+                (CpuInput { data: None }, Some(BusOp::Read(0x0001))),
+                (CpuInput { data: Some(0x00) }, None),
+            ],
+        );
+        assert_eq!(*cpu.regs.reg(dest), data)
     }
 
     fn encode_ld_r_r(dest: R, src: R) -> u8 {
@@ -345,13 +347,15 @@ mod tests {
         let data = 0x42;
         cpu.regs.h = 0x12;
         cpu.regs.l = 0x34;
-        let opcode = encode_ld_r_deref_hl(dest);
-        assert_eq!(cpu.step(CpuInput { data: None }), Some(BusOp::Read(0x0000)));
-        assert_eq!(cpu.step(CpuInput { data: Some(opcode) }), None);
-        assert_eq!(cpu.step(CpuInput { data: None }), Some(BusOp::Read(0x1234)));
-        assert_eq!(cpu.step(CpuInput { data: Some(data) }), None);
-        assert_eq!(cpu.step(CpuInput { data: None }), Some(BusOp::Read(0x0001)));
-        assert_eq!(cpu.step(CpuInput { data: Some(0x00) }), None);
+        cpu.test_opcode(
+            encode_ld_r_deref_hl(dest),
+            &[
+                (CpuInput { data: None }, Some(BusOp::Read(0x1234))),
+                (CpuInput { data: Some(data) }, None),
+                (CpuInput { data: None }, Some(BusOp::Read(0x0001))),
+                (CpuInput { data: Some(0x00) }, None),
+            ],
+        );
         assert_eq!(*cpu.regs.reg(dest), data)
     }
 
@@ -368,21 +372,22 @@ mod tests {
 
     fn test_ld_deref_hl_r(src: R) {
         let mut cpu = Cpu::default();
-        let expected = 0x42;
-        *cpu.regs.reg(src) = expected;
+        let data = 0x42;
         cpu.regs.h = 0x12;
         cpu.regs.l = 0x34;
-        *cpu.regs.reg(src) = expected;
-        let opcode = encode_ld_deref_hl_r(src);
-        assert_eq!(cpu.step(CpuInput { data: None }), Some(BusOp::Read(0x0000)));
-        assert_eq!(cpu.step(CpuInput { data: Some(opcode) }), None);
-        assert_eq!(
-            cpu.step(CpuInput { data: None }),
-            Some(BusOp::Write(cpu.regs.hl(), expected))
+        *cpu.regs.reg(src) = data;
+        cpu.test_opcode(
+            encode_ld_deref_hl_r(src),
+            &[
+                (
+                    CpuInput { data: None },
+                    Some(BusOp::Write(cpu.regs.hl(), data)),
+                ),
+                (CpuInput { data: None }, None),
+                (CpuInput { data: None }, Some(BusOp::Read(0x0001))),
+                (CpuInput { data: Some(0x00) }, None),
+            ],
         );
-        assert_eq!(cpu.step(CpuInput { data: None }), None);
-        assert_eq!(cpu.step(CpuInput { data: None }), Some(BusOp::Read(0x0001)));
-        assert_eq!(cpu.step(CpuInput { data: Some(0x00) }), None)
     }
 
     fn encode_ld_deref_hl_r(src: R) -> u8 {
@@ -393,21 +398,37 @@ mod tests {
     fn ret() {
         let mut cpu = Cpu::default();
         cpu.regs.sp = 0x1234;
-        let opcode = 0xc9;
-        assert_eq!(cpu.step(CpuInput { data: None }), Some(BusOp::Read(0x0000)));
-        assert_eq!(cpu.step(CpuInput { data: Some(opcode) }), None);
-
-        assert_eq!(cpu.step(CpuInput { data: None }), Some(BusOp::Read(0x1234)));
-        assert_eq!(cpu.step(CpuInput { data: Some(0x78) }), None);
-        assert_eq!(cpu.step(CpuInput { data: None }), Some(BusOp::Read(0x1235)));
-        assert_eq!(cpu.step(CpuInput { data: Some(0x56) }), None);
-
-        // M3 doesn't do any bus operation (according to LIJI32 and gekkio)
-        assert_eq!(cpu.step(CpuInput { data: None }), None);
-        assert_eq!(cpu.step(CpuInput { data: None }), None);
-
-        assert_eq!(cpu.step(CpuInput { data: None }), Some(BusOp::Read(0x5678)));
-        assert_eq!(cpu.step(CpuInput { data: Some(0x00) }), None);
+        cpu.test_opcode(
+            0xc9,
+            &[
+                (CpuInput { data: None }, Some(BusOp::Read(0x1234))),
+                (CpuInput { data: Some(0x78) }, None),
+                (CpuInput { data: None }, Some(BusOp::Read(0x1235))),
+                (CpuInput { data: Some(0x56) }, None),
+                // M3 doesn't do any bus operation (according to LIJI32 and gekkio)
+                (CpuInput { data: None }, None),
+                (CpuInput { data: None }, None),
+                (CpuInput { data: None }, Some(BusOp::Read(0x5678))),
+                (CpuInput { data: Some(0x00) }, None),
+            ],
+        );
         assert_eq!(cpu.regs.sp, 0x1236)
+    }
+
+    impl Cpu {
+        fn test_opcode<'a>(
+            &mut self,
+            opcode: u8,
+            steps: impl IntoIterator<Item = &'a (CpuInput, Option<BusOp>)>,
+        ) {
+            assert_eq!(
+                self.step(&CpuInput { data: None }),
+                Some(BusOp::Read(0x0000))
+            );
+            assert_eq!(self.step(&CpuInput { data: Some(opcode) }), None);
+            for (input, output) in steps {
+                assert_eq!(self.step(input), *output)
+            }
+        }
     }
 }
