@@ -49,7 +49,6 @@ enum MCycle {
 }
 
 impl MCycle {
-    #[inline(always)]
     fn next(self) -> Self {
         match self {
             MCycle::M1 => MCycle::M2,
@@ -133,7 +132,6 @@ struct RunningCpu<'a> {
 }
 
 impl<'a> RunningCpu<'a> {
-    #[inline(always)]
     fn exec_instr(&mut self) -> Option<BusOp> {
         match self.state.opcode.split() {
             (0b00, 0b000, 0b000) => self.nop(),
