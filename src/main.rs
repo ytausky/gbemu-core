@@ -80,73 +80,17 @@ impl Cpu {
 
     #[inline(always)]
     fn exec_instr(&mut self, input: CpuInput) -> Option<BusOp> {
-        match self.instr {
-            0b00_000_000 => self.nop(input),
-            0b01_000_000 => self.ld_r_r::<B, B>(input),
-            0b01_000_001 => self.ld_r_r::<B, C>(input),
-            0b01_000_010 => self.ld_r_r::<B, D>(input),
-            0b01_000_011 => self.ld_r_r::<B, E>(input),
-            0b01_000_100 => self.ld_r_r::<B, H>(input),
-            0b01_000_101 => self.ld_r_r::<B, L>(input),
-            0b01_000_110 => self.ld_r_deref_hl::<B>(input),
-            0b01_000_111 => self.ld_r_r::<B, A>(input),
-            0b01_001_000 => self.ld_r_r::<C, B>(input),
-            0b01_001_001 => self.ld_r_r::<C, C>(input),
-            0b01_001_010 => self.ld_r_r::<C, D>(input),
-            0b01_001_011 => self.ld_r_r::<C, E>(input),
-            0b01_001_100 => self.ld_r_r::<C, H>(input),
-            0b01_001_101 => self.ld_r_r::<C, L>(input),
-            0b01_001_110 => self.ld_r_deref_hl::<C>(input),
-            0b01_001_111 => self.ld_r_r::<C, A>(input),
-            0b01_010_000 => self.ld_r_r::<D, B>(input),
-            0b01_010_001 => self.ld_r_r::<D, C>(input),
-            0b01_010_010 => self.ld_r_r::<D, D>(input),
-            0b01_010_011 => self.ld_r_r::<D, E>(input),
-            0b01_010_100 => self.ld_r_r::<D, H>(input),
-            0b01_010_101 => self.ld_r_r::<D, L>(input),
-            0b01_010_110 => self.ld_r_deref_hl::<D>(input),
-            0b01_010_111 => self.ld_r_r::<D, A>(input),
-            0b01_011_000 => self.ld_r_r::<E, B>(input),
-            0b01_011_001 => self.ld_r_r::<E, C>(input),
-            0b01_011_010 => self.ld_r_r::<E, D>(input),
-            0b01_011_011 => self.ld_r_r::<E, E>(input),
-            0b01_011_100 => self.ld_r_r::<E, H>(input),
-            0b01_011_101 => self.ld_r_r::<E, L>(input),
-            0b01_011_110 => self.ld_r_deref_hl::<E>(input),
-            0b01_011_111 => self.ld_r_r::<E, A>(input),
-            0b01_100_000 => self.ld_r_r::<H, B>(input),
-            0b01_100_001 => self.ld_r_r::<H, C>(input),
-            0b01_100_010 => self.ld_r_r::<H, D>(input),
-            0b01_100_011 => self.ld_r_r::<H, E>(input),
-            0b01_100_100 => self.ld_r_r::<H, H>(input),
-            0b01_100_101 => self.ld_r_r::<H, L>(input),
-            0b01_100_110 => self.ld_r_deref_hl::<H>(input),
-            0b01_100_111 => self.ld_r_r::<H, A>(input),
-            0b01_101_000 => self.ld_r_r::<L, B>(input),
-            0b01_101_001 => self.ld_r_r::<L, C>(input),
-            0b01_101_010 => self.ld_r_r::<L, D>(input),
-            0b01_101_011 => self.ld_r_r::<L, E>(input),
-            0b01_101_100 => self.ld_r_r::<L, H>(input),
-            0b01_101_101 => self.ld_r_r::<L, L>(input),
-            0b01_101_110 => self.ld_r_deref_hl::<L>(input),
-            0b01_101_111 => self.ld_r_r::<L, A>(input),
-            0b01_110_000 => self.ld_deref_hl_r::<B>(input),
-            0b01_110_001 => self.ld_deref_hl_r::<C>(input),
-            0b01_110_010 => self.ld_deref_hl_r::<D>(input),
-            0b01_110_011 => self.ld_deref_hl_r::<E>(input),
-            0b01_110_100 => self.ld_deref_hl_r::<H>(input),
-            0b01_110_101 => self.ld_deref_hl_r::<L>(input),
-            0b01_110_110 => self.halt(input),
-            0b01_110_111 => self.ld_deref_hl_r::<A>(input),
-            0b01_111_000 => self.ld_r_r::<A, B>(input),
-            0b01_111_001 => self.ld_r_r::<A, C>(input),
-            0b01_111_010 => self.ld_r_r::<A, D>(input),
-            0b01_111_011 => self.ld_r_r::<A, E>(input),
-            0b01_111_100 => self.ld_r_r::<A, H>(input),
-            0b01_111_101 => self.ld_r_r::<A, L>(input),
-            0b01_111_110 => self.ld_r_deref_hl::<A>(input),
-            0b01_111_111 => self.ld_r_r::<A, A>(input),
-            0b11_001_001 => self.ret(input),
+        match (
+            self.instr >> 6,
+            (self.instr >> 3) & 0b111,
+            self.instr & 0b111,
+        ) {
+            (0b00, 0b000, 0b000) => self.nop(input),
+            (0b01, 0b110, 0b110) => self.halt(input),
+            (0b01, 0b110, src) => self.ld_deref_hl_r(src.into(), input),
+            (0b01, dest, 0b110) => self.ld_r_deref_hl(dest.into(), input),
+            (0b01, dest, src) => self.ld_r_r(dest.into(), src.into(), input),
+            (0b11, 0b001, 0b001) => self.ret(input),
             _ => unimplemented!(),
         }
     }
@@ -155,23 +99,23 @@ impl Cpu {
         self.fetch(input)
     }
 
-    fn ld_r_r<D: Reg, S: Reg>(&mut self, input: CpuInput) -> Option<BusOp> {
+    fn ld_r_r(&mut self, dest: R, src: R, input: CpuInput) -> Option<BusOp> {
         match (self.m_cycle, input.phase) {
             (M1, Tick) => self.fetch(input),
             (M1, Tock) => {
-                let value = *self.reg(S::CODE);
-                *self.reg(D::CODE) = value;
+                let value = *self.reg(src);
+                *self.reg(dest) = value;
                 self.fetch(input)
             }
             _ => unreachable!(),
         }
     }
 
-    fn ld_r_deref_hl<D: Reg>(&mut self, input: CpuInput) -> Option<BusOp> {
+    fn ld_r_deref_hl(&mut self, dest: R, input: CpuInput) -> Option<BusOp> {
         match (self.m_cycle, input.phase) {
             (M1, Tick) => Some(BusOp::Read(self.hl())),
             (M1, Tock) => {
-                *self.reg(D::CODE) = input.data.unwrap();
+                *self.reg(dest) = input.data.unwrap();
                 self.advance(input)
             }
             (M2, _) => self.fetch(input),
@@ -179,9 +123,9 @@ impl Cpu {
         }
     }
 
-    fn ld_deref_hl_r<S: Reg>(&mut self, input: CpuInput) -> Option<BusOp> {
+    fn ld_deref_hl_r(&mut self, src: R, input: CpuInput) -> Option<BusOp> {
         match (self.m_cycle, input.phase) {
-            (M1, Tick) => Some(BusOp::Write(self.hl(), *self.reg(S::CODE))),
+            (M1, Tick) => Some(BusOp::Write(self.hl(), *self.reg(src))),
             (M1, Tock) => self.advance(input),
             (M2, _) => self.fetch(input),
             _ => unreachable!(),
@@ -259,44 +203,19 @@ enum R {
     L,
 }
 
-trait Reg {
-    const CODE: R;
-}
-
-struct A;
-struct B;
-struct C;
-struct D;
-struct E;
-struct H;
-struct L;
-
-impl Reg for A {
-    const CODE: R = R::A;
-}
-
-impl Reg for B {
-    const CODE: R = R::B;
-}
-
-impl Reg for C {
-    const CODE: R = R::C;
-}
-
-impl Reg for D {
-    const CODE: R = R::D;
-}
-
-impl Reg for E {
-    const CODE: R = R::E;
-}
-
-impl Reg for H {
-    const CODE: R = R::H;
-}
-
-impl Reg for L {
-    const CODE: R = R::L;
+impl From<u8> for R {
+    fn from(encoding: u8) -> Self {
+        match encoding {
+            0b000 => R::B,
+            0b001 => R::C,
+            0b010 => R::D,
+            0b011 => R::E,
+            0b100 => R::H,
+            0b101 => R::L,
+            0b111 => R::A,
+            _ => panic!(),
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
