@@ -306,8 +306,8 @@ mod tests {
         cpu.test_opcode(
             encode_ld_r_r(dest, src),
             &[
-                (CpuInput { data: None }, Some(BusOp::Read(0x0001))),
-                (CpuInput { data: Some(0x00) }, None),
+                (CpuInput::with_data(None), Some(BusOp::Read(0x0001))),
+                (CpuInput::with_data(Some(0x00)), None),
             ],
         );
         assert_eq!(*cpu.regs.reg(dest), data)
@@ -346,10 +346,10 @@ mod tests {
         cpu.test_opcode(
             encode_ld_r_deref_hl(dest),
             &[
-                (CpuInput { data: None }, Some(BusOp::Read(0x1234))),
-                (CpuInput { data: Some(data) }, None),
-                (CpuInput { data: None }, Some(BusOp::Read(0x0001))),
-                (CpuInput { data: Some(0x00) }, None),
+                (CpuInput::with_data(None), Some(BusOp::Read(0x1234))),
+                (CpuInput::with_data(Some(data)), None),
+                (CpuInput::with_data(None), Some(BusOp::Read(0x0001))),
+                (CpuInput::with_data(Some(0x00)), None),
             ],
         );
         assert_eq!(*cpu.regs.reg(dest), data)
@@ -376,12 +376,12 @@ mod tests {
             encode_ld_deref_hl_r(src),
             &[
                 (
-                    CpuInput { data: None },
+                    CpuInput::with_data(None),
                     Some(BusOp::Write(cpu.regs.hl(), data)),
                 ),
-                (CpuInput { data: None }, None),
-                (CpuInput { data: None }, Some(BusOp::Read(0x0001))),
-                (CpuInput { data: Some(0x00) }, None),
+                (CpuInput::with_data(None), None),
+                (CpuInput::with_data(None), Some(BusOp::Read(0x0001))),
+                (CpuInput::with_data(Some(0x00)), None),
             ],
         );
     }
@@ -397,15 +397,15 @@ mod tests {
         cpu.test_opcode(
             0xc9,
             &[
-                (CpuInput { data: None }, Some(BusOp::Read(0x1234))),
-                (CpuInput { data: Some(0x78) }, None),
-                (CpuInput { data: None }, Some(BusOp::Read(0x1235))),
-                (CpuInput { data: Some(0x56) }, None),
+                (CpuInput::with_data(None), Some(BusOp::Read(0x1234))),
+                (CpuInput::with_data(Some(0x78)), None),
+                (CpuInput::with_data(None), Some(BusOp::Read(0x1235))),
+                (CpuInput::with_data(Some(0x56)), None),
                 // M3 doesn't do any bus operation (according to LIJI32 and gekkio)
-                (CpuInput { data: None }, None),
-                (CpuInput { data: None }, None),
-                (CpuInput { data: None }, Some(BusOp::Read(0x5678))),
-                (CpuInput { data: Some(0x00) }, None),
+                (CpuInput::with_data(None), None),
+                (CpuInput::with_data(None), None),
+                (CpuInput::with_data(None), Some(BusOp::Read(0x5678))),
+                (CpuInput::with_data(Some(0x00)), None),
             ],
         );
         assert_eq!(cpu.regs.sp, 0x1236)
@@ -418,13 +418,19 @@ mod tests {
             steps: impl IntoIterator<Item = &'a (CpuInput, Option<BusOp>)>,
         ) {
             assert_eq!(
-                self.step(&CpuInput { data: None }),
+                self.step(&CpuInput::with_data(None)),
                 Some(BusOp::Read(0x0000))
             );
-            assert_eq!(self.step(&CpuInput { data: Some(opcode) }), None);
+            assert_eq!(self.step(&CpuInput::with_data(Some(opcode))), None);
             for (input, output) in steps {
                 assert_eq!(self.step(input), *output)
             }
+        }
+    }
+
+    impl CpuInput {
+        fn with_data(data: Option<u8>) -> Self {
+            Self { data }
         }
     }
 }
