@@ -159,6 +159,7 @@ impl<'a> RunningCpu<'a> {
             (0b01, 0b110, src) => self.ld_deref_hl_r(src.into()),
             (0b01, dest, 0b110) => self.ld_r_deref_hl(dest.into()),
             (0b01, dest, src) => self.ld_r_r(dest.into(), src.into()),
+            (0b10, 0b000, 0b000) => self.add_a_r(R::B),
             (0b11, 0b001, 0b001) => self.ret(),
             _ => unimplemented!(),
         };
@@ -204,6 +205,17 @@ impl<'a> RunningCpu<'a> {
 
     fn halt(&mut self) -> Option<BusOp> {
         unimplemented!()
+    }
+
+    fn add_a_r(&mut self, r: R) -> Option<BusOp> {
+        match (self.state.m_cycle, self.state.phase) {
+            (M1, Tick) => self.fetch(),
+            (M1, Tock) => {
+                self.regs.a += *self.regs.reg(r);
+                self.fetch()
+            }
+            _ => unreachable!(),
+        }
     }
 
     fn ret(&mut self) -> Option<BusOp> {
@@ -388,6 +400,22 @@ mod tests {
 
     fn encode_ld_deref_hl_r(src: R) -> u8 {
         0b01_110_000 | src.code()
+    }
+
+    #[test]
+    fn add_a_b() {
+        let mut cpu = Cpu::default();
+        cpu.regs.a = 0x12;
+        cpu.regs.b = 0x34;
+        let sum = cpu.regs.a + cpu.regs.b;
+        cpu.test_opcode(
+            0x80,
+            &[
+                (CpuInput::with_data(None), Some(BusOp::Read(0x0001))),
+                (CpuInput::with_data(Some(0x00)), None),
+            ],
+        );
+        assert_eq!(cpu.regs.a, sum)
     }
 
     #[test]
