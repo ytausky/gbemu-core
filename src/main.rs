@@ -31,6 +31,20 @@ struct RunningState {
     phase: Phase,
 }
 
+impl RunningState {
+    fn next(&self) -> CpuState {
+        let (m_cycle, phase) = match self.phase {
+            Tick => (self.m_cycle, Tock),
+            Tock => (self.m_cycle.next(), Tick),
+        };
+        CpuState::Running(RunningState {
+            opcode: self.opcode,
+            m_cycle,
+            phase,
+        })
+    }
+}
+
 #[derive(Clone, Copy)]
 struct Opcode(u8);
 
@@ -46,15 +60,17 @@ enum MCycle {
     M2,
     M3,
     M4,
+    M5,
 }
 
 impl MCycle {
     fn next(self) -> Self {
         match self {
-            MCycle::M1 => MCycle::M2,
-            MCycle::M2 => MCycle::M3,
-            MCycle::M3 => MCycle::M4,
-            MCycle::M4 => panic!(),
+            M1 => M2,
+            M2 => M3,
+            M3 => M4,
+            M4 => M5,
+            M5 => panic!(),
         }
     }
 }
@@ -114,26 +130,30 @@ impl Regs {
 
 impl Cpu {
     pub fn step(&mut self, input: &CpuInput) -> Option<BusOp> {
-        match &mut self.state {
+        let (next_state, output) = match &mut self.state {
             CpuState::Running(state) => RunningCpu {
                 regs: &mut self.regs,
+                next_state: state.next(),
                 state,
                 input,
             }
             .exec_instr(),
-        }
+        };
+        self.state = next_state;
+        output
     }
 }
 
 struct RunningCpu<'a> {
     regs: &'a mut Regs,
     state: &'a mut RunningState,
+    next_state: CpuState,
     input: &'a CpuInput,
 }
 
 impl<'a> RunningCpu<'a> {
-    fn exec_instr(&mut self) -> Option<BusOp> {
-        match self.state.opcode.split() {
+    fn exec_instr(mut self) -> (CpuState, Option<BusOp>) {
+        let output = match self.state.opcode.split() {
             (0b00, 0b000, 0b000) => self.nop(),
             (0b01, 0b110, 0b110) => self.halt(),
             (0b01, 0b110, src) => self.ld_deref_hl_r(src.into()),
@@ -141,7 +161,8 @@ impl<'a> RunningCpu<'a> {
             (0b01, dest, src) => self.ld_r_r(dest.into(), src.into()),
             (0b11, 0b001, 0b001) => self.ret(),
             _ => unimplemented!(),
-        }
+        };
+        (self.next_state, output)
     }
 
     fn nop(&mut self) -> Option<BusOp> {
@@ -162,13 +183,10 @@ impl<'a> RunningCpu<'a> {
 
     fn ld_r_deref_hl(&mut self, dest: R) -> Option<BusOp> {
         match (self.state.m_cycle, self.state.phase) {
-            (M1, Tick) => {
-                self.advance();
-                Some(BusOp::Read(self.regs.hl()))
-            }
+            (M1, Tick) => Some(BusOp::Read(self.regs.hl())),
             (M1, Tock) => {
                 *self.regs.reg(dest) = self.input.data.unwrap();
-                self.advance()
+                None
             }
             (M2, _) => self.fetch(),
             _ => unreachable!(),
@@ -177,11 +195,8 @@ impl<'a> RunningCpu<'a> {
 
     fn ld_deref_hl_r(&mut self, src: R) -> Option<BusOp> {
         match (self.state.m_cycle, self.state.phase) {
-            (M1, Tick) => {
-                self.advance();
-                Some(BusOp::Write(self.regs.hl(), *self.regs.reg(src)))
-            }
-            (M1, Tock) => self.advance(),
+            (M1, Tick) => Some(BusOp::Write(self.regs.hl(), *self.regs.reg(src))),
+            (M1, Tock) => None,
             (M2, _) => self.fetch(),
             _ => unreachable!(),
         }
@@ -193,51 +208,34 @@ impl<'a> RunningCpu<'a> {
 
     fn ret(&mut self) -> Option<BusOp> {
         match (self.state.m_cycle, self.state.phase) {
-            (M1, Tick) => {
-                self.advance();
-                Some(BusOp::Read(self.regs.sp))
-            }
+            (M1, Tick) => Some(BusOp::Read(self.regs.sp)),
             (M1, Tock) => {
                 self.regs.pc = self.input.data.unwrap().into();
                 self.regs.sp += 1;
-                self.advance()
+                None
             }
-            (M2, Tick) => {
-                self.advance();
-                Some(BusOp::Read(self.regs.sp))
-            }
+            (M2, Tick) => Some(BusOp::Read(self.regs.sp)),
             (M2, Tock) => {
                 self.regs.pc |= u16::from(self.input.data.unwrap()) << 8;
                 self.regs.sp += 1;
-                self.advance()
+                None
             }
-            (M3, _) => self.advance(),
+            (M3, _) => None,
             (M4, _) => self.fetch(),
+            _ => unreachable!(),
         }
-    }
-
-    fn advance(&mut self) -> Option<BusOp> {
-        match self.state.phase {
-            Tick => self.state.phase = Tock,
-            Tock => {
-                self.state.m_cycle = self.state.m_cycle.next();
-                self.state.phase = Tick
-            }
-        }
-        None
     }
 
     fn fetch(&mut self) -> Option<BusOp> {
         match self.state.phase {
-            Phase::Tick => {
-                self.state.phase = Tock;
-                Some(BusOp::Read(self.regs.pc))
-            }
+            Phase::Tick => Some(BusOp::Read(self.regs.pc)),
             Phase::Tock => {
-                self.state.opcode = Opcode(self.input.data.unwrap());
                 self.regs.pc += 1;
-                self.state.m_cycle = M1;
-                self.state.phase = Tick;
+                self.next_state = CpuState::Running(RunningState {
+                    opcode: Opcode(self.input.data.unwrap()),
+                    m_cycle: M1,
+                    phase: Tick,
+                });
                 None
             }
         }
