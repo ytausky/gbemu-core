@@ -11,6 +11,7 @@ pub struct Cpu {
 
 struct Regs {
     a: u8,
+    f: FlagReg,
     b: u8,
     c: u8,
     d: u8,
@@ -20,6 +21,9 @@ struct Regs {
     pc: u16,
     sp: u16,
 }
+
+#[derive(Clone, Copy)]
+struct FlagReg(u8);
 
 enum CpuState {
     Running(RunningState),
@@ -88,6 +92,7 @@ impl Default for Regs {
     fn default() -> Self {
         Self {
             a: 0x00,
+            f: FlagReg(0x00),
             b: 0x00,
             c: 0x00,
             d: 0x00,
@@ -125,6 +130,24 @@ impl Regs {
             R::H => &mut self.h,
             R::L => &mut self.l,
         }
+    }
+}
+
+impl FlagReg {
+    fn z(self) -> bool {
+        self.0 & 0x80 != 0
+    }
+
+    fn n(self) -> bool {
+        self.0 & 0x40 != 0
+    }
+
+    fn h(self) -> bool {
+        self.0 & 0x20 != 0
+    }
+
+    fn cy(self) -> bool {
+        self.0 & 0x10 != 0
     }
 }
 
@@ -415,7 +438,11 @@ mod tests {
                 (CpuInput::with_data(Some(0x00)), None),
             ],
         );
-        assert_eq!(cpu.regs.a, sum)
+        assert_eq!(cpu.regs.a, sum);
+        assert!(!cpu.regs.f.z());
+        assert!(!cpu.regs.f.n());
+        assert!(!cpu.regs.f.h());
+        assert!(!cpu.regs.f.cy())
     }
 
     #[test]
