@@ -14,8 +14,17 @@ pub struct Cpu {
     l: u8,
     pc: u16,
     sp: u16,
-    instr: u8,
+    opcode: Opcode,
     m_cycle: MCycle,
+}
+
+#[derive(Clone, Copy)]
+struct Opcode(u8);
+
+impl Opcode {
+    fn split(self) -> (u8, u8, u8) {
+        (self.0 >> 6, (self.0 >> 3) & 0b111, self.0 & 0b111)
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -50,7 +59,7 @@ impl Default for Cpu {
             l: 0x00,
             pc: 0x0000,
             sp: 0x0000,
-            instr: 0x00,
+            opcode: Opcode(0x00),
             m_cycle: MCycle::M1,
         }
     }
@@ -80,11 +89,7 @@ impl Cpu {
 
     #[inline(always)]
     fn exec_instr(&mut self, input: CpuInput) -> Option<BusOp> {
-        match (
-            self.instr >> 6,
-            (self.instr >> 3) & 0b111,
-            self.instr & 0b111,
-        ) {
+        match self.opcode.split() {
             (0b00, 0b000, 0b000) => self.nop(input),
             (0b01, 0b110, 0b110) => self.halt(input),
             (0b01, 0b110, src) => self.ld_deref_hl_r(src.into(), input),
@@ -178,7 +183,7 @@ impl Cpu {
         match input.phase {
             Phase::Tick => Some(BusOp::Read(self.pc)),
             Phase::Tock => {
-                self.instr = input.data.unwrap();
+                self.opcode = Opcode(input.data.unwrap());
                 self.pc += 1;
                 self.m_cycle = MCycle::M1;
                 None
@@ -248,15 +253,15 @@ mod tests {
     fn test_ld_r_r(dest: R, src: R) {
         let mut cpu = Cpu::default();
         let expected = 0x42;
-        cpu.instr = encode_ld_r_r(dest, src);
+        cpu.opcode = encode_ld_r_r(dest, src);
         *cpu.reg(src) = expected;
         assert_eq!(cpu.tick(), Some(BusOp::Read(0x0000)));
         cpu.tock(Some(0x00));
         assert_eq!(*cpu.reg(dest), expected)
     }
 
-    fn encode_ld_r_r(dest: R, src: R) -> u8 {
-        0b01_000_000 | (dest.code() << 3) | src.code()
+    fn encode_ld_r_r(dest: R, src: R) -> Opcode {
+        Opcode(0b01_000_000 | (dest.code() << 3) | src.code())
     }
 
     impl R {
@@ -285,7 +290,7 @@ mod tests {
         let expected = 0x42;
         cpu.h = 0x12;
         cpu.l = 0x34;
-        cpu.instr = encode_ld_r_deref_hl(dest);
+        cpu.opcode = encode_ld_r_deref_hl(dest);
         assert_eq!(cpu.tick(), Some(BusOp::Read(0x1234)));
         cpu.tock(Some(expected));
         assert_eq!(cpu.tick(), Some(BusOp::Read(0x0000)));
@@ -293,8 +298,8 @@ mod tests {
         assert_eq!(*cpu.reg(dest), expected)
     }
 
-    fn encode_ld_r_deref_hl(dest: R) -> u8 {
-        0b01_000_110 | (dest.code() << 3)
+    fn encode_ld_r_deref_hl(dest: R) -> Opcode {
+        Opcode(0b01_000_110 | (dest.code() << 3))
     }
 
     #[test]
@@ -311,22 +316,22 @@ mod tests {
         cpu.h = 0x12;
         cpu.l = 0x34;
         *cpu.reg(src) = expected;
-        cpu.instr = encode_ld_deref_hl_r(src);
+        cpu.opcode = encode_ld_deref_hl_r(src);
         assert_eq!(cpu.tick(), Some(BusOp::Write(cpu.hl(), expected)));
         cpu.tock(None);
         assert_eq!(cpu.tick(), Some(BusOp::Read(0x0000)));
         cpu.tock(Some(0x00));
     }
 
-    fn encode_ld_deref_hl_r(src: R) -> u8 {
-        0b01_110_000 | src.code()
+    fn encode_ld_deref_hl_r(src: R) -> Opcode {
+        Opcode(0b01_110_000 | src.code())
     }
 
     #[test]
     fn ret() {
         let mut cpu = Cpu::default();
         cpu.sp = 0x1234;
-        cpu.instr = 0xc9;
+        cpu.opcode = Opcode(0xc9);
         assert_eq!(cpu.tick(), Some(BusOp::Read(0x1234)));
         cpu.tock(Some(0x78));
         assert_eq!(cpu.tick(), Some(BusOp::Read(0x1235)));
