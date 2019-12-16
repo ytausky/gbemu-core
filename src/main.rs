@@ -4,10 +4,9 @@ fn main() {
     println!("Hello, world!");
 }
 
-#[derive(Default)]
 pub struct Cpu {
     regs: Regs,
-    ctrl: RunningState,
+    state: CpuState,
 }
 
 struct Regs {
@@ -20,6 +19,10 @@ struct Regs {
     l: u8,
     pc: u16,
     sp: u16,
+}
+
+enum CpuState {
+    Running(RunningState),
 }
 
 struct RunningState {
@@ -53,6 +56,15 @@ impl MCycle {
             MCycle::M2 => MCycle::M3,
             MCycle::M3 => MCycle::M4,
             MCycle::M4 => panic!(),
+        }
+    }
+}
+
+impl Default for Cpu {
+    fn default() -> Self {
+        Self {
+            regs: Default::default(),
+            state: CpuState::Running(Default::default()),
         }
     }
 }
@@ -103,25 +115,27 @@ impl Regs {
 
 impl Cpu {
     pub fn step(&mut self, input: CpuInput) -> Option<BusOp> {
-        RunningCpu {
-            regs: &mut self.regs,
-            ctrl: &mut self.ctrl,
-            input: &input,
+        match &mut self.state {
+            CpuState::Running(state) => RunningCpu {
+                regs: &mut self.regs,
+                state,
+                input: &input,
+            }
+            .exec_instr(),
         }
-        .exec_instr()
     }
 }
 
 struct RunningCpu<'a> {
     regs: &'a mut Regs,
-    ctrl: &'a mut RunningState,
+    state: &'a mut RunningState,
     input: &'a CpuInput,
 }
 
 impl<'a> RunningCpu<'a> {
     #[inline(always)]
     fn exec_instr(&mut self) -> Option<BusOp> {
-        match self.ctrl.opcode.split() {
+        match self.state.opcode.split() {
             (0b00, 0b000, 0b000) => self.nop(),
             (0b01, 0b110, 0b110) => self.halt(),
             (0b01, 0b110, src) => self.ld_deref_hl_r(src.into()),
@@ -137,7 +151,7 @@ impl<'a> RunningCpu<'a> {
     }
 
     fn ld_r_r(&mut self, dest: R, src: R) -> Option<BusOp> {
-        match (self.ctrl.m_cycle, self.ctrl.phase) {
+        match (self.state.m_cycle, self.state.phase) {
             (M1, Tick) => self.fetch(),
             (M1, Tock) => {
                 let value = *self.regs.reg(src);
@@ -149,7 +163,7 @@ impl<'a> RunningCpu<'a> {
     }
 
     fn ld_r_deref_hl(&mut self, dest: R) -> Option<BusOp> {
-        match (self.ctrl.m_cycle, self.ctrl.phase) {
+        match (self.state.m_cycle, self.state.phase) {
             (M1, Tick) => {
                 self.advance();
                 Some(BusOp::Read(self.regs.hl()))
@@ -164,7 +178,7 @@ impl<'a> RunningCpu<'a> {
     }
 
     fn ld_deref_hl_r(&mut self, src: R) -> Option<BusOp> {
-        match (self.ctrl.m_cycle, self.ctrl.phase) {
+        match (self.state.m_cycle, self.state.phase) {
             (M1, Tick) => {
                 self.advance();
                 Some(BusOp::Write(self.regs.hl(), *self.regs.reg(src)))
@@ -180,7 +194,7 @@ impl<'a> RunningCpu<'a> {
     }
 
     fn ret(&mut self) -> Option<BusOp> {
-        match (self.ctrl.m_cycle, self.ctrl.phase) {
+        match (self.state.m_cycle, self.state.phase) {
             (M1, Tick) => {
                 self.advance();
                 Some(BusOp::Read(self.regs.sp))
@@ -205,26 +219,27 @@ impl<'a> RunningCpu<'a> {
     }
 
     fn advance(&mut self) -> Option<BusOp> {
-        match self.ctrl.phase {
-            Tick => self.ctrl.phase = Tock,
+        match self.state.phase {
+            Tick => self.state.phase = Tock,
             Tock => {
-                self.ctrl.m_cycle = self.ctrl.m_cycle.next();
-                self.ctrl.phase = Tick
+                self.state.m_cycle = self.state.m_cycle.next();
+                self.state.phase = Tick
             }
         }
         None
     }
 
     fn fetch(&mut self) -> Option<BusOp> {
-        match self.ctrl.phase {
+        match self.state.phase {
             Phase::Tick => {
-                self.ctrl.phase = Tock;
+                self.state.phase = Tock;
                 Some(BusOp::Read(self.regs.pc))
             }
             Phase::Tock => {
-                self.ctrl.opcode = Opcode(self.input.data.unwrap());
+                self.state.opcode = Opcode(self.input.data.unwrap());
                 self.regs.pc += 1;
-                self.ctrl.m_cycle = MCycle::M1;
+                self.state.m_cycle = M1;
+                self.state.phase = Tick;
                 None
             }
         }
@@ -291,15 +306,17 @@ mod tests {
     fn test_ld_r_r(dest: R, src: R) {
         let mut cpu = Cpu::default();
         let expected = 0x42;
-        cpu.ctrl.opcode = encode_ld_r_r(dest, src);
+        let opcode = encode_ld_r_r(dest, src);
         *cpu.regs.reg(src) = expected;
         assert_eq!(cpu.step(CpuInput { data: None }), Some(BusOp::Read(0x0000)));
-        cpu.step(CpuInput { data: Some(0x00) });
+        assert_eq!(cpu.step(CpuInput { data: Some(opcode) }), None);
+        assert_eq!(cpu.step(CpuInput { data: None }), Some(BusOp::Read(0x0001)));
+        assert_eq!(cpu.step(CpuInput { data: Some(0x00) }), None);
         assert_eq!(*cpu.regs.reg(dest), expected)
     }
 
-    fn encode_ld_r_r(dest: R, src: R) -> Opcode {
-        Opcode(0b01_000_000 | (dest.code() << 3) | src.code())
+    fn encode_ld_r_r(dest: R, src: R) -> u8 {
+        0b01_000_000 | (dest.code() << 3) | src.code()
     }
 
     impl R {
@@ -325,21 +342,21 @@ mod tests {
 
     fn test_ld_r_deref_hl(dest: R) {
         let mut cpu = Cpu::default();
-        let expected = 0x42;
+        let data = 0x42;
         cpu.regs.h = 0x12;
         cpu.regs.l = 0x34;
-        cpu.ctrl.opcode = encode_ld_r_deref_hl(dest);
-        assert_eq!(cpu.step(CpuInput { data: None }), Some(BusOp::Read(0x1234)));
-        cpu.step(CpuInput {
-            data: Some(expected),
-        });
+        let opcode = encode_ld_r_deref_hl(dest);
         assert_eq!(cpu.step(CpuInput { data: None }), Some(BusOp::Read(0x0000)));
-        cpu.step(CpuInput { data: Some(0x00) });
-        assert_eq!(*cpu.regs.reg(dest), expected)
+        assert_eq!(cpu.step(CpuInput { data: Some(opcode) }), None);
+        assert_eq!(cpu.step(CpuInput { data: None }), Some(BusOp::Read(0x1234)));
+        assert_eq!(cpu.step(CpuInput { data: Some(data) }), None);
+        assert_eq!(cpu.step(CpuInput { data: None }), Some(BusOp::Read(0x0001)));
+        assert_eq!(cpu.step(CpuInput { data: Some(0x00) }), None);
+        assert_eq!(*cpu.regs.reg(dest), data)
     }
 
-    fn encode_ld_r_deref_hl(dest: R) -> Opcode {
-        Opcode(0b01_000_110 | (dest.code() << 3))
+    fn encode_ld_r_deref_hl(dest: R) -> u8 {
+        0b01_000_110 | (dest.code() << 3)
     }
 
     #[test]
@@ -356,36 +373,41 @@ mod tests {
         cpu.regs.h = 0x12;
         cpu.regs.l = 0x34;
         *cpu.regs.reg(src) = expected;
-        cpu.ctrl.opcode = encode_ld_deref_hl_r(src);
+        let opcode = encode_ld_deref_hl_r(src);
+        assert_eq!(cpu.step(CpuInput { data: None }), Some(BusOp::Read(0x0000)));
+        assert_eq!(cpu.step(CpuInput { data: Some(opcode) }), None);
         assert_eq!(
             cpu.step(CpuInput { data: None }),
             Some(BusOp::Write(cpu.regs.hl(), expected))
         );
-        cpu.step(CpuInput { data: None });
-        assert_eq!(cpu.step(CpuInput { data: None }), Some(BusOp::Read(0x0000)));
-        cpu.step(CpuInput { data: Some(0x00) });
+        assert_eq!(cpu.step(CpuInput { data: None }), None);
+        assert_eq!(cpu.step(CpuInput { data: None }), Some(BusOp::Read(0x0001)));
+        assert_eq!(cpu.step(CpuInput { data: Some(0x00) }), None)
     }
 
-    fn encode_ld_deref_hl_r(src: R) -> Opcode {
-        Opcode(0b01_110_000 | src.code())
+    fn encode_ld_deref_hl_r(src: R) -> u8 {
+        0b01_110_000 | src.code()
     }
 
     #[test]
     fn ret() {
         let mut cpu = Cpu::default();
         cpu.regs.sp = 0x1234;
-        cpu.ctrl.opcode = Opcode(0xc9);
+        let opcode = 0xc9;
+        assert_eq!(cpu.step(CpuInput { data: None }), Some(BusOp::Read(0x0000)));
+        assert_eq!(cpu.step(CpuInput { data: Some(opcode) }), None);
+
         assert_eq!(cpu.step(CpuInput { data: None }), Some(BusOp::Read(0x1234)));
-        cpu.step(CpuInput { data: Some(0x78) });
+        assert_eq!(cpu.step(CpuInput { data: Some(0x78) }), None);
         assert_eq!(cpu.step(CpuInput { data: None }), Some(BusOp::Read(0x1235)));
-        cpu.step(CpuInput { data: Some(0x56) });
+        assert_eq!(cpu.step(CpuInput { data: Some(0x56) }), None);
 
         // M3 doesn't do any bus operation (according to LIJI32 and gekkio)
         assert_eq!(cpu.step(CpuInput { data: None }), None);
-        cpu.step(CpuInput { data: None });
+        assert_eq!(cpu.step(CpuInput { data: None }), None);
 
         assert_eq!(cpu.step(CpuInput { data: None }), Some(BusOp::Read(0x5678)));
-        cpu.step(CpuInput { data: Some(0x00) });
+        assert_eq!(cpu.step(CpuInput { data: Some(0x00) }), None);
         assert_eq!(cpu.regs.sp, 0x1236)
     }
 }
