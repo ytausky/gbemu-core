@@ -153,7 +153,7 @@ impl<'a> RunningCpu<'a> {
             (0b01, 0b110, src) => self.ld_deref_hl_r(src.into()),
             (0b01, dest, 0b110) => self.ld_r_deref_hl(dest.into()),
             (0b01, dest, src) => self.ld_r_r(dest.into(), src.into()),
-            (0b10, 0b000, 0b000) => self.add_a_r(R::B),
+            (0b10, 0b000, src) => self.add_a_r(src.into()),
             (0b11, 0b001, 0b001) => self.ret(),
             _ => unimplemented!(),
         };
@@ -403,9 +403,33 @@ mod tests {
     }
 
     #[test]
-    fn add_a_b() {
-        for (x, y, flags) in &[
-            (0x12, 0x34, FlagReg::default()),
+    fn add_a_a() {
+        let test_cases = &[
+            (
+                0x08,
+                FlagReg {
+                    h: true,
+                    ..Default::default()
+                },
+            ),
+            (
+                0x80,
+                FlagReg {
+                    z: true,
+                    cy: true,
+                    ..Default::default()
+                },
+            ),
+        ];
+        for (a, flags) in test_cases {
+            test_add_a_r(R::A, *a, *a, flags)
+        }
+    }
+
+    #[test]
+    fn add_a_r() {
+        let test_cases = &[
+            (0x12, 0x34, Default::default()),
             (
                 0x0f,
                 0x1,
@@ -431,8 +455,11 @@ mod tests {
                     ..Default::default()
                 },
             ),
-        ] {
-            test_add_a_r(R::B, *x, *y, flags)
+        ];
+        for (x, y, flags) in test_cases {
+            for &r in &[R::B, R::C, R::D, R::E, R::H, R::L] {
+                test_add_a_r(r, *x, *y, flags)
+            }
         }
     }
 
