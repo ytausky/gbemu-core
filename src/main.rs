@@ -153,7 +153,8 @@ impl<'a> RunningCpu<'a> {
             (0b01, 0b110, src) => self.ld_deref_hl_r(src.into()),
             (0b01, dest, 0b110) => self.ld_r_deref_hl(dest.into()),
             (0b01, dest, src) => self.ld_r_r(dest.into(), src.into()),
-            (0b10, 0b000, src) => self.add_a_r(src.into()),
+            (0b10, 0b000, src) => self.add(src.into(), false),
+            (0b10, 0b001, src) => self.add(src.into(), self.regs.f.cy),
             (0b11, 0b001, 0b001) => self.ret(),
             _ => unimplemented!(),
         };
@@ -201,17 +202,18 @@ impl<'a> RunningCpu<'a> {
         unimplemented!()
     }
 
-    fn add_a_r(&mut self, r: R) -> Option<BusOp> {
+    fn add(&mut self, r: R, cy_in: bool) -> Option<BusOp> {
         match (self.state.m_cycle, self.state.phase) {
             (M1, Tick) => self.fetch(),
             (M1, Tock) => {
                 let x = self.regs.a;
                 let y = *self.regs.reg(r);
-                let (sum, overflow) = x.overflowing_add(y);
+                let (partial_sum, overflow1) = x.overflowing_add(y);
+                let (sum, overflow2) = partial_sum.overflowing_add(cy_in.into());
                 self.regs.a = sum;
                 self.regs.f.z = sum == 0;
-                self.regs.f.h = (x & 0x0f) + (y & 0x0f) > 0x0f;
-                self.regs.f.cy = overflow;
+                self.regs.f.h = (x & 0x0f) + (y & 0x0f) + u8::from(cy_in) > 0x0f;
+                self.regs.f.cy = overflow1 | overflow2;
                 self.fetch()
             }
             _ => unreachable!(),
@@ -480,6 +482,46 @@ mod tests {
 
     fn encode_add_a_r(r: R) -> u8 {
         0b10_000_000 | r.code()
+    }
+
+    #[test]
+    fn adc_a_r() {
+        let test_cases = &[(
+            0xff,
+            0x00,
+            true,
+            FlagReg {
+                z: true,
+                h: true,
+                cy: true,
+                ..Default::default()
+            },
+        )];
+        for (x, y, cy_in, flags) in test_cases {
+            for &r in &[R::B, R::C, R::D, R::E, R::H, R::L] {
+                test_adc_a_r(r, *x, *y, *cy_in, flags)
+            }
+        }
+    }
+
+    fn test_adc_a_r(r: R, x: u8, y: u8, cy_in: bool, flags: &FlagReg) {
+        let mut cpu = Cpu::default();
+        cpu.regs.a = x;
+        *cpu.regs.reg(r) = y;
+        cpu.regs.f.cy = cy_in;
+        cpu.test_opcode(
+            encode_adc_a_r(r),
+            &[
+                (CpuInput::with_data(None), Some(BusOp::Read(0x0001))),
+                (CpuInput::with_data(Some(0x00)), None),
+            ],
+        );
+        assert_eq!(cpu.regs.a, x.wrapping_add(y).wrapping_add(cy_in.into()));
+        assert_eq!(cpu.regs.f, *flags)
+    }
+
+    fn encode_adc_a_r(r: R) -> u8 {
+        0b10_001_000 | r.code()
     }
 
     #[test]
