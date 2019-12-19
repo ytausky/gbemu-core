@@ -508,7 +508,7 @@ mod tests {
         },
         AdderTestCase {
             x: 0x0f,
-            y: 0x1,
+            y: 0x01,
             cy_in: false,
             expected_flags: CpuFlags {
                 z: false,
