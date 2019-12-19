@@ -12,7 +12,7 @@ pub struct Cpu {
 #[derive(Default)]
 struct Regs {
     a: u8,
-    f: FlagReg,
+    f: CpuFlags,
     b: u8,
     c: u8,
     d: u8,
@@ -24,7 +24,7 @@ struct Regs {
 }
 
 #[derive(Debug, Default, PartialEq)]
-struct FlagReg {
+struct CpuFlags {
     z: bool,
     n: bool,
     h: bool,
@@ -463,7 +463,7 @@ mod tests {
         x: u8,
         y: u8,
         cy_in: bool,
-        expected_flags: FlagReg,
+        expected_flags: CpuFlags,
     }
 
     impl AdderTestCase {
@@ -477,7 +477,7 @@ mod tests {
             x: 0x08,
             y: 0x08,
             cy_in: false,
-            expected_flags: FlagReg {
+            expected_flags: CpuFlags {
                 z: false,
                 n: false,
                 h: true,
@@ -488,7 +488,7 @@ mod tests {
             x: 0x80,
             y: 0x80,
             cy_in: false,
-            expected_flags: FlagReg {
+            expected_flags: CpuFlags {
                 z: true,
                 n: false,
                 h: false,
@@ -499,7 +499,7 @@ mod tests {
             x: 0x12,
             y: 0x34,
             cy_in: false,
-            expected_flags: FlagReg {
+            expected_flags: CpuFlags {
                 z: false,
                 n: false,
                 h: false,
@@ -510,7 +510,7 @@ mod tests {
             x: 0x0f,
             y: 0x1,
             cy_in: false,
-            expected_flags: FlagReg {
+            expected_flags: CpuFlags {
                 z: false,
                 n: false,
                 h: true,
@@ -521,7 +521,7 @@ mod tests {
             x: 0xf0,
             y: 0xf0,
             cy_in: false,
-            expected_flags: FlagReg {
+            expected_flags: CpuFlags {
                 z: false,
                 n: false,
                 h: false,
@@ -532,7 +532,7 @@ mod tests {
             x: 0xf0,
             y: 0x10,
             cy_in: false,
-            expected_flags: FlagReg {
+            expected_flags: CpuFlags {
                 z: true,
                 n: false,
                 h: false,
@@ -543,7 +543,7 @@ mod tests {
             x: 0xff,
             y: 0x00,
             cy_in: true,
-            expected_flags: FlagReg {
+            expected_flags: CpuFlags {
                 z: true,
                 n: false,
                 h: true,
