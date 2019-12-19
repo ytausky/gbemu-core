@@ -260,7 +260,7 @@ pub struct CpuInput {
     data: Option<u8>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 enum R {
     A,
     B,
@@ -405,79 +405,12 @@ mod tests {
     }
 
     #[test]
-    fn add_a_a() {
-        let test_cases = &[
-            (
-                0x08,
-                FlagReg {
-                    h: true,
-                    ..Default::default()
-                },
-            ),
-            (
-                0x80,
-                FlagReg {
-                    z: true,
-                    cy: true,
-                    ..Default::default()
-                },
-            ),
-        ];
-        for (a, flags) in test_cases {
-            test_add_a_r(R::A, *a, *a, flags)
-        }
-    }
-
-    #[test]
     fn add_a_r() {
-        let test_cases = &[
-            (0x12, 0x34, Default::default()),
-            (
-                0x0f,
-                0x1,
-                FlagReg {
-                    h: true,
-                    ..Default::default()
-                },
-            ),
-            (
-                0xf0,
-                0xf0,
-                FlagReg {
-                    cy: true,
-                    ..Default::default()
-                },
-            ),
-            (
-                0xf0,
-                0x10,
-                FlagReg {
-                    z: true,
-                    cy: true,
-                    ..Default::default()
-                },
-            ),
-        ];
-        for (x, y, flags) in test_cases {
-            for &r in &[R::B, R::C, R::D, R::E, R::H, R::L] {
-                test_add_a_r(r, *x, *y, flags)
+        for test_case in ADDER_TEST_CASES {
+            if !test_case.cy_in {
+                test_adder_for_all_r(&encode_add_a_r, test_case)
             }
         }
-    }
-
-    fn test_add_a_r(r: R, x: u8, y: u8, flags: &FlagReg) {
-        let mut cpu = Cpu::default();
-        cpu.regs.a = x;
-        *cpu.regs.reg(r) = y;
-        cpu.test_opcode(
-            encode_add_a_r(r),
-            &[
-                (CpuInput::with_data(None), Some(BusOp::Read(0x0001))),
-                (CpuInput::with_data(Some(0x00)), None),
-            ],
-        );
-        assert_eq!(cpu.regs.a, x.wrapping_add(y));
-        assert_eq!(cpu.regs.f, *flags)
     }
 
     fn encode_add_a_r(r: R) -> u8 {
@@ -486,43 +419,138 @@ mod tests {
 
     #[test]
     fn adc_a_r() {
-        let test_cases = &[(
-            0xff,
-            0x00,
-            true,
-            FlagReg {
-                z: true,
-                h: true,
-                cy: true,
-                ..Default::default()
-            },
-        )];
-        for (x, y, cy_in, flags) in test_cases {
-            for &r in &[R::B, R::C, R::D, R::E, R::H, R::L] {
-                test_adc_a_r(r, *x, *y, *cy_in, flags)
-            }
+        for test_case in ADDER_TEST_CASES {
+            test_adder_for_all_r(&encode_adc_a_r, test_case)
         }
-    }
-
-    fn test_adc_a_r(r: R, x: u8, y: u8, cy_in: bool, flags: &FlagReg) {
-        let mut cpu = Cpu::default();
-        cpu.regs.a = x;
-        *cpu.regs.reg(r) = y;
-        cpu.regs.f.cy = cy_in;
-        cpu.test_opcode(
-            encode_adc_a_r(r),
-            &[
-                (CpuInput::with_data(None), Some(BusOp::Read(0x0001))),
-                (CpuInput::with_data(Some(0x00)), None),
-            ],
-        );
-        assert_eq!(cpu.regs.a, x.wrapping_add(y).wrapping_add(cy_in.into()));
-        assert_eq!(cpu.regs.f, *flags)
     }
 
     fn encode_adc_a_r(r: R) -> u8 {
         0b10_001_000 | r.code()
     }
+
+    fn test_adder_for_all_r<F: Fn(R) -> u8>(encoder: &F, test_case: &AdderTestCase) {
+        if test_case.is_applicable_for_a() {
+            test_adder(R::A, encoder, test_case)
+        }
+        for &r in &[R::B, R::C, R::D, R::E, R::H, R::L] {
+            test_adder(r, encoder, test_case)
+        }
+    }
+
+    fn test_adder<F: Fn(R) -> u8>(r: R, encoder: &F, test_case: &AdderTestCase) {
+        let mut cpu = Cpu::default();
+        cpu.regs.a = test_case.x;
+        *cpu.regs.reg(r) = test_case.y;
+        cpu.regs.f.cy = test_case.cy_in;
+        cpu.test_opcode(
+            encoder(r),
+            &[
+                (CpuInput::with_data(None), Some(BusOp::Read(0x0001))),
+                (CpuInput::with_data(Some(0x00)), None),
+            ],
+        );
+        assert_eq!(
+            cpu.regs.a,
+            test_case
+                .x
+                .wrapping_add(test_case.y)
+                .wrapping_add(test_case.cy_in.into())
+        );
+        assert_eq!(cpu.regs.f, test_case.expected_flags)
+    }
+
+    struct AdderTestCase {
+        x: u8,
+        y: u8,
+        cy_in: bool,
+        expected_flags: FlagReg,
+    }
+
+    impl AdderTestCase {
+        fn is_applicable_for_a(&self) -> bool {
+            self.x == self.y
+        }
+    }
+
+    const ADDER_TEST_CASES: &[AdderTestCase] = &[
+        AdderTestCase {
+            x: 0x08,
+            y: 0x08,
+            cy_in: false,
+            expected_flags: FlagReg {
+                z: false,
+                n: false,
+                h: true,
+                cy: false,
+            },
+        },
+        AdderTestCase {
+            x: 0x80,
+            y: 0x80,
+            cy_in: false,
+            expected_flags: FlagReg {
+                z: true,
+                n: false,
+                h: false,
+                cy: true,
+            },
+        },
+        AdderTestCase {
+            x: 0x12,
+            y: 0x34,
+            cy_in: false,
+            expected_flags: FlagReg {
+                z: false,
+                n: false,
+                h: false,
+                cy: false,
+            },
+        },
+        AdderTestCase {
+            x: 0x0f,
+            y: 0x1,
+            cy_in: false,
+            expected_flags: FlagReg {
+                z: false,
+                n: false,
+                h: true,
+                cy: false,
+            },
+        },
+        AdderTestCase {
+            x: 0xf0,
+            y: 0xf0,
+            cy_in: false,
+            expected_flags: FlagReg {
+                z: false,
+                n: false,
+                h: false,
+                cy: true,
+            },
+        },
+        AdderTestCase {
+            x: 0xf0,
+            y: 0x10,
+            cy_in: false,
+            expected_flags: FlagReg {
+                z: true,
+                n: false,
+                h: false,
+                cy: true,
+            },
+        },
+        AdderTestCase {
+            x: 0xff,
+            y: 0x00,
+            cy_in: true,
+            expected_flags: FlagReg {
+                z: true,
+                n: false,
+                h: true,
+                cy: true,
+            },
+        },
+    ];
 
     #[test]
     fn ret() {
