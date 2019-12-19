@@ -9,6 +9,7 @@ pub struct Cpu {
     state: CpuState,
 }
 
+#[derive(Default)]
 struct Regs {
     a: u8,
     f: FlagReg,
@@ -22,6 +23,7 @@ struct Regs {
     sp: u16,
 }
 
+#[derive(Debug, Default, PartialEq)]
 struct FlagReg {
     z: bool,
     n: bool,
@@ -88,28 +90,6 @@ impl Default for Cpu {
         Self {
             regs: Default::default(),
             state: CpuState::Running(Default::default()),
-        }
-    }
-}
-
-impl Default for Regs {
-    fn default() -> Self {
-        Self {
-            a: 0x00,
-            f: FlagReg {
-                z: false,
-                n: false,
-                h: false,
-                cy: false,
-            },
-            b: 0x00,
-            c: 0x00,
-            d: 0x00,
-            e: 0x00,
-            h: 0x00,
-            l: 0x00,
-            pc: 0x0000,
-            sp: 0x0000,
         }
     }
 }
@@ -225,7 +205,13 @@ impl<'a> RunningCpu<'a> {
         match (self.state.m_cycle, self.state.phase) {
             (M1, Tick) => self.fetch(),
             (M1, Tock) => {
-                self.regs.a += *self.regs.reg(r);
+                let x = self.regs.a;
+                let y = *self.regs.reg(r);
+                let (sum, overflow) = x.overflowing_add(y);
+                self.regs.a = sum;
+                self.regs.f.z = sum == 0;
+                self.regs.f.h = (x & 0x0f) + (y & 0x0f) > 0x0f;
+                self.regs.f.cy = overflow;
                 self.fetch()
             }
             _ => unreachable!(),
@@ -418,22 +404,55 @@ mod tests {
 
     #[test]
     fn add_a_b() {
+        for (x, y, flags) in &[
+            (0x12, 0x34, FlagReg::default()),
+            (
+                0x0f,
+                0x1,
+                FlagReg {
+                    h: true,
+                    ..Default::default()
+                },
+            ),
+            (
+                0xf0,
+                0xf0,
+                FlagReg {
+                    cy: true,
+                    ..Default::default()
+                },
+            ),
+            (
+                0xf0,
+                0x10,
+                FlagReg {
+                    z: true,
+                    cy: true,
+                    ..Default::default()
+                },
+            ),
+        ] {
+            test_add_a_r(R::B, *x, *y, flags)
+        }
+    }
+
+    fn test_add_a_r(r: R, x: u8, y: u8, flags: &FlagReg) {
         let mut cpu = Cpu::default();
-        cpu.regs.a = 0x12;
-        cpu.regs.b = 0x34;
-        let sum = cpu.regs.a + cpu.regs.b;
+        cpu.regs.a = x;
+        *cpu.regs.reg(r) = y;
         cpu.test_opcode(
-            0x80,
+            encode_add_a_r(r),
             &[
                 (CpuInput::with_data(None), Some(BusOp::Read(0x0001))),
                 (CpuInput::with_data(Some(0x00)), None),
             ],
         );
-        assert_eq!(cpu.regs.a, sum);
-        assert!(!cpu.regs.f.z);
-        assert!(!cpu.regs.f.n);
-        assert!(!cpu.regs.f.h);
-        assert!(!cpu.regs.f.cy)
+        assert_eq!(cpu.regs.a, x.wrapping_add(y));
+        assert_eq!(cpu.regs.f, *flags)
+    }
+
+    fn encode_add_a_r(r: R) -> u8 {
+        0b10_000_000 | r.code()
     }
 
     #[test]
