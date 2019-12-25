@@ -208,14 +208,13 @@ impl<'a> RunningCpu<'a> {
         match (self.state.m_cycle, self.state.phase) {
             (M1, Tick) => self.fetch(),
             (M1, Tock) => {
-                let x = self.regs.a;
-                let y = *self.regs.reg(r);
-                let (partial_sum, overflow1) = x.overflowing_add(y);
-                let (sum, overflow2) = partial_sum.overflowing_add(carry_in.into());
-                self.regs.a = sum;
-                self.regs.f.z = sum == 0;
-                self.regs.f.h = (x & 0x0f) + (y & 0x0f) + u8::from(carry_in) > 0x0f;
-                self.regs.f.cy = overflow1 | overflow2;
+                let output = alu_addition(&AluInput {
+                    x: self.regs.a,
+                    y: *self.regs.reg(r),
+                    carry_in,
+                });
+                self.regs.a = output.result;
+                self.regs.f = output.flags;
                 self.fetch()
             }
             _ => unreachable!(),
