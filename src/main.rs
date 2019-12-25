@@ -153,6 +153,7 @@ impl<'a> RunningCpu<'a> {
             (0b01, 0b110, src) => self.ld_deref_hl_r(src.into()),
             (0b01, dest, 0b110) => self.ld_r_deref_hl(dest.into()),
             (0b01, dest, src) => self.ld_r_r(dest.into(), src.into()),
+            (0b10, 0b000, 0b110) => self.addition_deref_hl(false),
             (0b10, 0b000, src) => self.add(src.into(), false),
             (0b10, 0b001, src) => self.add(src.into(), self.regs.f.cy),
             (0b11, 0b001, 0b001) => self.ret(),
@@ -220,6 +221,24 @@ impl<'a> RunningCpu<'a> {
         }
     }
 
+    fn addition_deref_hl(&mut self, carry_in: bool) -> Option<BusOp> {
+        match (self.state.m_cycle, self.state.phase) {
+            (M1, Tick) => Some(BusOp::Read(self.regs.hl())),
+            (M1, Tock) => {
+                let output = alu_addition(&AluInput {
+                    x: self.regs.a,
+                    y: self.input.data.unwrap(),
+                    cy_in: carry_in,
+                });
+                self.regs.a = output.result;
+                self.regs.f = output.flags;
+                None
+            }
+            (M2, _) => self.fetch(),
+            _ => unreachable!(),
+        }
+    }
+
     fn ret(&mut self) -> Option<BusOp> {
         match (self.state.m_cycle, self.state.phase) {
             (M1, Tick) => Some(BusOp::Read(self.regs.sp)),
@@ -254,6 +273,37 @@ impl<'a> RunningCpu<'a> {
             }
         }
     }
+}
+
+fn alu_addition(
+    AluInput {
+        x,
+        y,
+        cy_in: carry_in,
+    }: &AluInput,
+) -> AluOutput {
+    let (partial_sum, overflow1) = x.overflowing_add(*y);
+    let (sum, overflow2) = partial_sum.overflowing_add((*carry_in).into());
+    AluOutput {
+        result: sum,
+        flags: CpuFlags {
+            z: sum == 0,
+            n: false,
+            h: (x & 0x0f) + (y & 0x0f) + u8::from(*carry_in) > 0x0f,
+            cy: overflow1 | overflow2,
+        },
+    }
+}
+
+struct AluInput {
+    x: u8,
+    y: u8,
+    cy_in: bool,
+}
+
+struct AluOutput {
+    result: u8,
+    flags: CpuFlags,
 }
 
 pub struct CpuInput {
@@ -405,16 +455,41 @@ mod tests {
     }
 
     #[test]
-    fn add_a_r() {
+    fn add() {
         for test_case in ADDITION_TEST_CASES {
             if !test_case.input.cy_in {
-                test_adder_for_all_r(&encode_add_a_r, test_case)
+                test_adder_for_all_r(&encode_add_a_r, test_case);
+                test_add_deref_hl(test_case)
             }
         }
     }
 
     fn encode_add_a_r(r: R) -> u8 {
         0b10_000_000 | r.code()
+    }
+
+    fn test_add_deref_hl(test_case: &AluTestCase) {
+        const ADD_DEREF_HL: u8 = 0x86;
+        test_addition_deref_hl(ADD_DEREF_HL, test_case)
+    }
+
+    fn test_addition_deref_hl(opcode: u8, test_case: &AluTestCase) {
+        let mut cpu = Cpu::default();
+        cpu.regs.a = test_case.input.x;
+        cpu.regs.f.cy = test_case.input.cy_in;
+        cpu.regs.h = 0x12;
+        cpu.regs.l = 0x34;
+        cpu.test_opcode(
+            opcode,
+            &[
+                (CpuInput::with_data(None), Some(BusOp::Read(cpu.regs.hl()))),
+                (CpuInput::with_data(Some(test_case.input.y)), None),
+                (CpuInput::with_data(None), Some(BusOp::Read(0x0001))),
+                (CpuInput::with_data(Some(0x00)), None),
+            ],
+        );
+        assert_eq!(cpu.regs.a, test_case.expected.result);
+        assert_eq!(cpu.regs.f, test_case.expected.flags)
     }
 
     #[test]
@@ -456,17 +531,6 @@ mod tests {
     struct AluTestCase {
         input: AluInput,
         expected: AluOutput,
-    }
-
-    struct AluInput {
-        x: u8,
-        y: u8,
-        cy_in: bool,
-    }
-
-    struct AluOutput {
-        result: u8,
-        flags: CpuFlags,
     }
 
     impl AluTestCase {
