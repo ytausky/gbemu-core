@@ -472,83 +472,62 @@ mod tests {
         }
     }
 
+    macro_rules! cpu_flags {
+        ($($flag:ident),*) => {
+            CpuFlags {
+                $($flag: true,)*
+                ..CpuFlags {
+                    z: false,
+                    n: false,
+                    h: false,
+                    cy: false,
+                }
+            }
+        };
+    }
+
     const ADDER_TEST_CASES: &[AdderTestCase] = &[
         AdderTestCase {
             x: 0x08,
             y: 0x08,
             cy_in: false,
-            expected_flags: CpuFlags {
-                z: false,
-                n: false,
-                h: true,
-                cy: false,
-            },
+            expected_flags: cpu_flags!(h),
         },
         AdderTestCase {
             x: 0x80,
             y: 0x80,
             cy_in: false,
-            expected_flags: CpuFlags {
-                z: true,
-                n: false,
-                h: false,
-                cy: true,
-            },
+            expected_flags: cpu_flags!(z, cy),
         },
         AdderTestCase {
             x: 0x12,
             y: 0x34,
             cy_in: false,
-            expected_flags: CpuFlags {
-                z: false,
-                n: false,
-                h: false,
-                cy: false,
-            },
+            expected_flags: cpu_flags!(),
         },
         AdderTestCase {
             x: 0x0f,
             y: 0x01,
             cy_in: false,
-            expected_flags: CpuFlags {
-                z: false,
-                n: false,
-                h: true,
-                cy: false,
-            },
+            expected_flags: cpu_flags!(h),
         },
         AdderTestCase {
             x: 0xf0,
             y: 0xf0,
             cy_in: false,
-            expected_flags: CpuFlags {
-                z: false,
-                n: false,
-                h: false,
-                cy: true,
-            },
+            expected_flags: cpu_flags!(cy),
         },
         AdderTestCase {
             x: 0xf0,
             y: 0x10,
             cy_in: false,
-            expected_flags: CpuFlags {
-                z: true,
-                n: false,
-                h: false,
-                cy: true,
-            },
+            expected_flags: cpu_flags!(z, cy),
         },
         AdderTestCase {
             x: 0xff,
             y: 0x00,
             cy_in: true,
-            expected_flags: CpuFlags {
-                z: true,
-                n: false,
-                h: true,
-                cy: true,
-            },
+            expected_flags: cpu_flags!(z, h, cy),
         },
     ];
 
