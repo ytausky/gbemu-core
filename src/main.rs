@@ -155,6 +155,7 @@ impl<'a> RunningCpu<'a> {
             (0b01, dest, src) => self.ld_r_r(dest.into(), src.into()),
             (0b10, 0b000, 0b110) => self.addition_deref_hl(false),
             (0b10, 0b000, src) => self.add(src.into(), false),
+            (0b10, 0b001, 0b110) => self.addition_deref_hl(self.regs.f.cy),
             (0b10, 0b001, src) => self.add(src.into(), self.regs.f.cy),
             (0b11, 0b001, 0b001) => self.ret(),
             _ => unimplemented!(),
@@ -489,12 +490,18 @@ mod tests {
     #[test]
     fn adc_a_r() {
         for test_case in ADDITION_TEST_CASES {
-            test_adder_for_all_r(&encode_adc_a_r, test_case)
+            test_adder_for_all_r(&encode_adc_a_r, test_case);
+            test_adc_deref_hl(test_case)
         }
     }
 
     fn encode_adc_a_r(r: R) -> u8 {
         0b10_001_000 | r.code()
+    }
+
+    fn test_adc_deref_hl(test_case: &AluTestCase) {
+        const ADC_A_DEREF_HL: u8 = 0x8e;
+        test_addition_deref_hl(ADC_A_DEREF_HL, test_case)
     }
 
     fn test_adder_for_all_r<F: Fn(R) -> u8>(encoder: &F, test_case: &AluTestCase) {
