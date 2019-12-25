@@ -228,7 +228,7 @@ impl<'a> RunningCpu<'a> {
                 let output = alu_addition(&AluInput {
                     x: self.regs.a,
                     y: self.input.data.unwrap(),
-                    cy_in: carry_in,
+                    carry_in,
                 });
                 self.regs.a = output.result;
                 self.regs.f = output.flags;
@@ -275,13 +275,7 @@ impl<'a> RunningCpu<'a> {
     }
 }
 
-fn alu_addition(
-    AluInput {
-        x,
-        y,
-        cy_in: carry_in,
-    }: &AluInput,
-) -> AluOutput {
+fn alu_addition(AluInput { x, y, carry_in }: &AluInput) -> AluOutput {
     let (partial_sum, overflow1) = x.overflowing_add(*y);
     let (sum, overflow2) = partial_sum.overflowing_add((*carry_in).into());
     AluOutput {
@@ -298,7 +292,7 @@ fn alu_addition(
 struct AluInput {
     x: u8,
     y: u8,
-    cy_in: bool,
+    carry_in: bool,
 }
 
 struct AluOutput {
@@ -457,7 +451,7 @@ mod tests {
     #[test]
     fn add() {
         for test_case in ADDITION_TEST_CASES {
-            if !test_case.input.cy_in {
+            if !test_case.input.carry_in {
                 test_adder_for_all_r(&encode_add_a_r, test_case);
                 test_add_deref_hl(test_case)
             }
@@ -476,7 +470,7 @@ mod tests {
     fn test_addition_deref_hl(opcode: u8, test_case: &AluTestCase) {
         let mut cpu = Cpu::default();
         cpu.regs.a = test_case.input.x;
-        cpu.regs.f.cy = test_case.input.cy_in;
+        cpu.regs.f.cy = test_case.input.carry_in;
         cpu.regs.h = 0x12;
         cpu.regs.l = 0x34;
         cpu.test_opcode(
@@ -516,7 +510,7 @@ mod tests {
         let mut cpu = Cpu::default();
         cpu.regs.a = test_case.input.x;
         *cpu.regs.reg(r) = test_case.input.y;
-        cpu.regs.f.cy = test_case.input.cy_in;
+        cpu.regs.f.cy = test_case.input.carry_in;
         cpu.test_opcode(
             encoder(r),
             &[
@@ -558,7 +552,7 @@ mod tests {
             input: AluInput {
                 x: 0x08,
                 y: 0x08,
-                cy_in: false,
+                carry_in: false,
             },
             expected: AluOutput {
                 result: 0x10,
@@ -569,7 +563,7 @@ mod tests {
             input: AluInput {
                 x: 0x80,
                 y: 0x80,
-                cy_in: false,
+                carry_in: false,
             },
             expected: AluOutput {
                 result: 0x00,
@@ -580,7 +574,7 @@ mod tests {
             input: AluInput {
                 x: 0x12,
                 y: 0x34,
-                cy_in: false,
+                carry_in: false,
             },
             expected: AluOutput {
                 result: 0x46,
@@ -591,7 +585,7 @@ mod tests {
             input: AluInput {
                 x: 0x0f,
                 y: 0x01,
-                cy_in: false,
+                carry_in: false,
             },
             expected: AluOutput {
                 result: 0x10,
@@ -602,7 +596,7 @@ mod tests {
             input: AluInput {
                 x: 0xf0,
                 y: 0xf0,
-                cy_in: false,
+                carry_in: false,
             },
             expected: AluOutput {
                 result: 0xe0,
@@ -613,7 +607,7 @@ mod tests {
             input: AluInput {
                 x: 0xf0,
                 y: 0x10,
-                cy_in: false,
+                carry_in: false,
             },
             expected: AluOutput {
                 result: 0x00,
@@ -624,7 +618,7 @@ mod tests {
             input: AluInput {
                 x: 0xff,
                 y: 0x00,
-                cy_in: true,
+                carry_in: true,
             },
             expected: AluOutput {
                 result: 0x00,
