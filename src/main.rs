@@ -449,21 +449,20 @@ mod tests {
                 (CpuInput::with_data(Some(0x00)), None),
             ],
         );
-        assert_eq!(
-            cpu.regs.a,
-            test_case
-                .x
-                .wrapping_add(test_case.y)
-                .wrapping_add(test_case.cy_in.into())
-        );
-        assert_eq!(cpu.regs.f, test_case.expected_flags)
+        assert_eq!(cpu.regs.a, test_case.expected.result);
+        assert_eq!(cpu.regs.f, test_case.expected.flags)
     }
 
     struct AdderTestCase {
         x: u8,
         y: u8,
         cy_in: bool,
-        expected_flags: CpuFlags,
+        expected: AluOutput,
+    }
+
+    struct AluOutput {
+        result: u8,
+        flags: CpuFlags,
     }
 
     impl AdderTestCase {
@@ -491,43 +490,64 @@ mod tests {
             x: 0x08,
             y: 0x08,
             cy_in: false,
-            expected_flags: cpu_flags!(h),
+            expected: AluOutput {
+                result: 0x10,
+                flags: cpu_flags!(h),
+            },
         },
         AdderTestCase {
             x: 0x80,
             y: 0x80,
             cy_in: false,
-            expected_flags: cpu_flags!(z, cy),
+            expected: AluOutput {
+                result: 0x00,
+                flags: cpu_flags!(z, cy),
+            },
         },
         AdderTestCase {
             x: 0x12,
             y: 0x34,
             cy_in: false,
-            expected_flags: cpu_flags!(),
+            expected: AluOutput {
+                result: 0x46,
+                flags: cpu_flags!(),
+            },
         },
         AdderTestCase {
             x: 0x0f,
             y: 0x01,
             cy_in: false,
-            expected_flags: cpu_flags!(h),
+            expected: AluOutput {
+                result: 0x10,
+                flags: cpu_flags!(h),
+            },
         },
         AdderTestCase {
             x: 0xf0,
             y: 0xf0,
             cy_in: false,
-            expected_flags: cpu_flags!(cy),
+            expected: AluOutput {
+                result: 0xe0,
+                flags: cpu_flags!(cy),
+            },
         },
         AdderTestCase {
             x: 0xf0,
             y: 0x10,
             cy_in: false,
-            expected_flags: cpu_flags!(z, cy),
+            expected: AluOutput {
+                result: 0x00,
+                flags: cpu_flags!(z, cy),
+            },
         },
         AdderTestCase {
             x: 0xff,
             y: 0x00,
             cy_in: true,
-            expected_flags: cpu_flags!(z, h, cy),
+            expected: AluOutput {
+                result: 0x00,
+                flags: cpu_flags!(z, h, cy),
+            },
         },
     ];
 
