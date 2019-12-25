@@ -407,7 +407,7 @@ mod tests {
     #[test]
     fn add_a_r() {
         for test_case in ADDER_TEST_CASES {
-            if !test_case.cy_in {
+            if !test_case.input.cy_in {
                 test_adder_for_all_r(&encode_add_a_r, test_case)
             }
         }
@@ -439,9 +439,9 @@ mod tests {
 
     fn test_adder<F: Fn(R) -> u8>(r: R, encoder: &F, test_case: &AdderTestCase) {
         let mut cpu = Cpu::default();
-        cpu.regs.a = test_case.x;
-        *cpu.regs.reg(r) = test_case.y;
-        cpu.regs.f.cy = test_case.cy_in;
+        cpu.regs.a = test_case.input.x;
+        *cpu.regs.reg(r) = test_case.input.y;
+        cpu.regs.f.cy = test_case.input.cy_in;
         cpu.test_opcode(
             encoder(r),
             &[
@@ -454,10 +454,14 @@ mod tests {
     }
 
     struct AdderTestCase {
+        input: AluInput,
+        expected: AluOutput,
+    }
+
+    struct AluInput {
         x: u8,
         y: u8,
         cy_in: bool,
-        expected: AluOutput,
     }
 
     struct AluOutput {
@@ -467,7 +471,7 @@ mod tests {
 
     impl AdderTestCase {
         fn is_applicable_for_a(&self) -> bool {
-            self.x == self.y
+            self.input.x == self.input.y
         }
     }
 
@@ -487,63 +491,77 @@ mod tests {
 
     const ADDER_TEST_CASES: &[AdderTestCase] = &[
         AdderTestCase {
-            x: 0x08,
-            y: 0x08,
-            cy_in: false,
+            input: AluInput {
+                x: 0x08,
+                y: 0x08,
+                cy_in: false,
+            },
             expected: AluOutput {
                 result: 0x10,
                 flags: cpu_flags!(h),
             },
         },
         AdderTestCase {
-            x: 0x80,
-            y: 0x80,
-            cy_in: false,
+            input: AluInput {
+                x: 0x80,
+                y: 0x80,
+                cy_in: false,
+            },
             expected: AluOutput {
                 result: 0x00,
                 flags: cpu_flags!(z, cy),
             },
         },
         AdderTestCase {
-            x: 0x12,
-            y: 0x34,
-            cy_in: false,
+            input: AluInput {
+                x: 0x12,
+                y: 0x34,
+                cy_in: false,
+            },
             expected: AluOutput {
                 result: 0x46,
                 flags: cpu_flags!(),
             },
         },
         AdderTestCase {
-            x: 0x0f,
-            y: 0x01,
-            cy_in: false,
+            input: AluInput {
+                x: 0x0f,
+                y: 0x01,
+                cy_in: false,
+            },
             expected: AluOutput {
                 result: 0x10,
                 flags: cpu_flags!(h),
             },
         },
         AdderTestCase {
-            x: 0xf0,
-            y: 0xf0,
-            cy_in: false,
+            input: AluInput {
+                x: 0xf0,
+                y: 0xf0,
+                cy_in: false,
+            },
             expected: AluOutput {
                 result: 0xe0,
                 flags: cpu_flags!(cy),
             },
         },
         AdderTestCase {
-            x: 0xf0,
-            y: 0x10,
-            cy_in: false,
+            input: AluInput {
+                x: 0xf0,
+                y: 0x10,
+                cy_in: false,
+            },
             expected: AluOutput {
                 result: 0x00,
                 flags: cpu_flags!(z, cy),
             },
         },
         AdderTestCase {
-            x: 0xff,
-            y: 0x00,
-            cy_in: true,
+            input: AluInput {
+                x: 0xff,
+                y: 0x00,
+                cy_in: true,
+            },
             expected: AluOutput {
                 result: 0x00,
                 flags: cpu_flags!(z, h, cy),
