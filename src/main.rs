@@ -406,7 +406,7 @@ mod tests {
 
     #[test]
     fn add_a_r() {
-        for test_case in ADDER_TEST_CASES {
+        for test_case in ADDITION_TEST_CASES {
             if !test_case.input.cy_in {
                 test_adder_for_all_r(&encode_add_a_r, test_case)
             }
@@ -419,7 +419,7 @@ mod tests {
 
     #[test]
     fn adc_a_r() {
-        for test_case in ADDER_TEST_CASES {
+        for test_case in ADDITION_TEST_CASES {
             test_adder_for_all_r(&encode_adc_a_r, test_case)
         }
     }
@@ -428,7 +428,7 @@ mod tests {
         0b10_001_000 | r.code()
     }
 
-    fn test_adder_for_all_r<F: Fn(R) -> u8>(encoder: &F, test_case: &AdderTestCase) {
+    fn test_adder_for_all_r<F: Fn(R) -> u8>(encoder: &F, test_case: &AluTestCase) {
         if test_case.is_applicable_for_a() {
             test_adder(R::A, encoder, test_case)
         }
@@ -437,7 +437,7 @@ mod tests {
         }
     }
 
-    fn test_adder<F: Fn(R) -> u8>(r: R, encoder: &F, test_case: &AdderTestCase) {
+    fn test_adder<F: Fn(R) -> u8>(r: R, encoder: &F, test_case: &AluTestCase) {
         let mut cpu = Cpu::default();
         cpu.regs.a = test_case.input.x;
         *cpu.regs.reg(r) = test_case.input.y;
@@ -453,7 +453,7 @@ mod tests {
         assert_eq!(cpu.regs.f, test_case.expected.flags)
     }
 
-    struct AdderTestCase {
+    struct AluTestCase {
         input: AluInput,
         expected: AluOutput,
     }
@@ -469,7 +469,7 @@ mod tests {
         flags: CpuFlags,
     }
 
-    impl AdderTestCase {
+    impl AluTestCase {
         fn is_applicable_for_a(&self) -> bool {
             self.input.x == self.input.y
         }
@@ -489,8 +489,8 @@ mod tests {
         };
     }
 
-    const ADDER_TEST_CASES: &[AdderTestCase] = &[
-        AdderTestCase {
+    const ADDITION_TEST_CASES: &[AluTestCase] = &[
+        AluTestCase {
             input: AluInput {
                 x: 0x08,
                 y: 0x08,
@@ -501,7 +501,7 @@ mod tests {
                 flags: cpu_flags!(h),
             },
         },
-        AdderTestCase {
+        AluTestCase {
             input: AluInput {
                 x: 0x80,
                 y: 0x80,
@@ -512,7 +512,7 @@ mod tests {
                 flags: cpu_flags!(z, cy),
             },
         },
-        AdderTestCase {
+        AluTestCase {
             input: AluInput {
                 x: 0x12,
                 y: 0x34,
@@ -523,7 +523,7 @@ mod tests {
                 flags: cpu_flags!(),
             },
         },
-        AdderTestCase {
+        AluTestCase {
             input: AluInput {
                 x: 0x0f,
                 y: 0x01,
@@ -534,7 +534,7 @@ mod tests {
                 flags: cpu_flags!(h),
             },
         },
-        AdderTestCase {
+        AluTestCase {
             input: AluInput {
                 x: 0xf0,
                 y: 0xf0,
@@ -545,7 +545,7 @@ mod tests {
                 flags: cpu_flags!(cy),
             },
         },
-        AdderTestCase {
+        AluTestCase {
             input: AluInput {
                 x: 0xf0,
                 y: 0x10,
@@ -556,7 +556,7 @@ mod tests {
                 flags: cpu_flags!(z, cy),
             },
         },
-        AdderTestCase {
+        AluTestCase {
             input: AluInput {
                 x: 0xff,
                 y: 0x00,
