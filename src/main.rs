@@ -123,7 +123,7 @@ impl Regs {
 }
 
 impl Cpu {
-    pub fn step(&mut self, input: &CpuInput) -> Option<BusOp> {
+    pub fn step(&mut self, input: &CpuInput) -> CpuOutput {
         let (next_state, output) = match &mut self.state {
             CpuState::Running(state) => RunningCpu {
                 regs: &mut self.regs,
@@ -146,7 +146,7 @@ struct RunningCpu<'a> {
 }
 
 impl<'a> RunningCpu<'a> {
-    fn exec_instr(mut self) -> (CpuState, Option<BusOp>) {
+    fn exec_instr(mut self) -> (CpuState, CpuOutput) {
         let output = match self.state.opcode.split() {
             (0b00, 0b000, 0b000) => self.nop(),
             (0b01, 0b110, 0b110) => self.halt(),
@@ -163,11 +163,11 @@ impl<'a> RunningCpu<'a> {
         (self.next_state, output)
     }
 
-    fn nop(&mut self) -> Option<BusOp> {
+    fn nop(&mut self) -> CpuOutput {
         self.fetch()
     }
 
-    fn ld_r_r(&mut self, dest: R, src: R) -> Option<BusOp> {
+    fn ld_r_r(&mut self, dest: R, src: R) -> CpuOutput {
         match (self.state.m_cycle, self.state.phase) {
             (M1, Tick) => self.fetch(),
             (M1, Tock) => {
@@ -179,7 +179,7 @@ impl<'a> RunningCpu<'a> {
         }
     }
 
-    fn ld_r_deref_hl(&mut self, dest: R) -> Option<BusOp> {
+    fn ld_r_deref_hl(&mut self, dest: R) -> CpuOutput {
         match (self.state.m_cycle, self.state.phase) {
             (M1, Tick) => Some(BusOp::Read(self.regs.hl())),
             (M1, Tock) => {
@@ -191,7 +191,7 @@ impl<'a> RunningCpu<'a> {
         }
     }
 
-    fn ld_deref_hl_r(&mut self, src: R) -> Option<BusOp> {
+    fn ld_deref_hl_r(&mut self, src: R) -> CpuOutput {
         match (self.state.m_cycle, self.state.phase) {
             (M1, Tick) => Some(BusOp::Write(self.regs.hl(), *self.regs.reg(src))),
             (M1, Tock) => None,
@@ -200,11 +200,11 @@ impl<'a> RunningCpu<'a> {
         }
     }
 
-    fn halt(&mut self) -> Option<BusOp> {
+    fn halt(&mut self) -> CpuOutput {
         unimplemented!()
     }
 
-    fn add(&mut self, r: R, carry_in: bool) -> Option<BusOp> {
+    fn add(&mut self, r: R, carry_in: bool) -> CpuOutput {
         match (self.state.m_cycle, self.state.phase) {
             (M1, Tick) => self.fetch(),
             (M1, Tock) => {
@@ -221,7 +221,7 @@ impl<'a> RunningCpu<'a> {
         }
     }
 
-    fn addition_deref_hl(&mut self, carry_in: bool) -> Option<BusOp> {
+    fn addition_deref_hl(&mut self, carry_in: bool) -> CpuOutput {
         match (self.state.m_cycle, self.state.phase) {
             (M1, Tick) => Some(BusOp::Read(self.regs.hl())),
             (M1, Tock) => {
@@ -239,7 +239,7 @@ impl<'a> RunningCpu<'a> {
         }
     }
 
-    fn ret(&mut self) -> Option<BusOp> {
+    fn ret(&mut self) -> CpuOutput {
         match (self.state.m_cycle, self.state.phase) {
             (M1, Tick) => Some(BusOp::Read(self.regs.sp)),
             (M1, Tock) => {
@@ -259,7 +259,7 @@ impl<'a> RunningCpu<'a> {
         }
     }
 
-    fn fetch(&mut self) -> Option<BusOp> {
+    fn fetch(&mut self) -> CpuOutput {
         match self.state.phase {
             Phase::Tick => Some(BusOp::Read(self.regs.pc)),
             Phase::Tock => {
@@ -335,6 +335,8 @@ enum Phase {
     Tick,
     Tock,
 }
+
+type CpuOutput = Option<BusOp>;
 
 #[derive(Debug, PartialEq)]
 pub enum BusOp {
@@ -658,7 +660,7 @@ mod tests {
         fn test_opcode<'a>(
             &mut self,
             opcode: u8,
-            steps: impl IntoIterator<Item = &'a (CpuInput, Option<BusOp>)>,
+            steps: impl IntoIterator<Item = &'a (CpuInput, CpuOutput)>,
         ) {
             assert_eq!(
                 self.step(&CpuInput::with_data(None)),
