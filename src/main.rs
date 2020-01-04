@@ -7,6 +7,7 @@ fn main() {
 pub struct Cpu {
     regs: Regs,
     state: CpuState,
+    phase: Phase,
 }
 
 #[derive(Default)]
@@ -32,27 +33,90 @@ struct CpuFlags {
 }
 
 enum CpuState {
-    Running(RunningState),
+    Running(InstrState),
 }
 
-struct RunningState {
+enum InstrState {
+    Complex(ComplexInstrState),
+    Simple(SimpleInstrState),
+}
+
+impl InstrState {
+    fn decode(opcode: Opcode) -> Self {
+        match opcode.split() {
+            (0b01, 0b110, src) => InstrState::Simple(SimpleInstrState {
+                decoded_instr: DecodedInstr {
+                    src: SimpleInstrSrc::Reg(src.into()),
+                    action: SimpleInstrAction::Ld,
+                    dest: Some(SimpleInstrDest::DerefHl),
+                },
+                micro_step: MicroStep::Read,
+            }),
+            (0b01, dest, 0b110) => InstrState::Simple(SimpleInstrState {
+                decoded_instr: DecodedInstr {
+                    src: SimpleInstrSrc::DerefHl,
+                    action: SimpleInstrAction::Ld,
+                    dest: Some(SimpleInstrDest::Reg(dest.into())),
+                },
+                micro_step: MicroStep::Read,
+            }),
+            (0b01, dest, src) => InstrState::Simple(SimpleInstrState {
+                decoded_instr: DecodedInstr {
+                    src: SimpleInstrSrc::Reg(src.into()),
+                    action: SimpleInstrAction::Ld,
+                    dest: Some(SimpleInstrDest::Reg(dest.into())),
+                },
+                micro_step: MicroStep::Read,
+            }),
+            _ => InstrState::Complex(ComplexInstrState {
+                opcode,
+                m_cycle: M1,
+            }),
+        }
+    }
+}
+
+struct ComplexInstrState {
     opcode: Opcode,
     m_cycle: MCycle,
-    phase: Phase,
 }
 
-impl RunningState {
-    fn next(&self) -> CpuState {
-        let (m_cycle, phase) = match self.phase {
-            Tick => (self.m_cycle, Tock),
-            Tock => (self.m_cycle.next(), Tick),
-        };
-        CpuState::Running(RunningState {
-            opcode: self.opcode,
-            m_cycle,
-            phase,
-        })
-    }
+#[derive(Clone)]
+struct SimpleInstrState {
+    decoded_instr: DecodedInstr,
+    micro_step: MicroStep,
+}
+
+#[derive(Clone)]
+struct DecodedInstr {
+    src: SimpleInstrSrc,
+    action: SimpleInstrAction,
+    dest: Option<SimpleInstrDest>,
+}
+
+#[derive(Clone)]
+enum SimpleInstrSrc {
+    DerefHl,
+    Reg(R),
+}
+
+#[derive(Clone)]
+enum SimpleInstrAction {
+    Ld,
+}
+
+#[derive(Clone, Copy)]
+enum SimpleInstrDest {
+    DerefHl,
+    Reg(R),
+}
+
+#[derive(Clone)]
+enum MicroStep {
+    Read,
+    Action(u8),
+    Write(u8),
+    Fetch,
 }
 
 #[derive(Clone, Copy)]
@@ -89,17 +153,17 @@ impl Default for Cpu {
     fn default() -> Self {
         Self {
             regs: Default::default(),
-            state: CpuState::Running(Default::default()),
+            state: CpuState::Running(InstrState::Complex(Default::default())),
+            phase: Tick,
         }
     }
 }
 
-impl Default for RunningState {
+impl Default for ComplexInstrState {
     fn default() -> Self {
         Self {
             opcode: Opcode(0x00),
-            m_cycle: MCycle::M1,
-            phase: Tick,
+            m_cycle: M1,
         }
     }
 }
@@ -127,32 +191,156 @@ impl Cpu {
         let (next_state, output) = match &mut self.state {
             CpuState::Running(state) => RunningCpu {
                 regs: &mut self.regs,
-                next_state: state.next(),
                 state,
+                phase: &self.phase,
                 input,
             }
-            .exec_instr(),
+            .step(),
         };
         self.state = next_state;
+        self.phase = match self.phase {
+            Tick => Tock,
+            Tock => Tick,
+        };
         output
     }
 }
 
 struct RunningCpu<'a> {
     regs: &'a mut Regs,
-    state: &'a mut RunningState,
-    next_state: CpuState,
+    state: &'a mut InstrState,
+    phase: &'a Phase,
     input: &'a CpuInput,
 }
 
 impl<'a> RunningCpu<'a> {
+    fn step(&mut self) -> (CpuState, CpuOutput) {
+        match self.state {
+            InstrState::Complex(state) => ComplexInstrExecution {
+                regs: self.regs,
+                next_state: {
+                    let m_cycle = match self.phase {
+                        Tick => state.m_cycle,
+                        Tock => state.m_cycle.next(),
+                    };
+                    CpuState::Running(InstrState::Complex(ComplexInstrState {
+                        opcode: state.opcode,
+                        m_cycle,
+                    }))
+                },
+                state,
+                phase: self.phase,
+                input: self.input,
+            }
+            .exec_instr(),
+            InstrState::Simple(state) => SimpleInstrExecution {
+                regs: self.regs,
+                state,
+                phase: self.phase,
+                input: self.input,
+            }
+            .step(),
+        }
+    }
+}
+
+struct SimpleInstrExecution<'a> {
+    regs: &'a mut Regs,
+    state: &'a mut SimpleInstrState,
+    phase: &'a Phase,
+    input: &'a CpuInput,
+}
+
+impl<'a> SimpleInstrExecution<'a> {
+    fn step(&mut self) -> (CpuState, CpuOutput) {
+        loop {
+            let (opcode, output) = match self.state.micro_step {
+                MicroStep::Read => (None, self.read()),
+                MicroStep::Action(operand) => (None, self.act(operand)),
+                MicroStep::Write(result) => (None, self.write(result)),
+                MicroStep::Fetch => self.fetch(),
+            };
+            if let Some(output) = output {
+                let new_state = CpuState::Running(if let Some(opcode) = opcode {
+                    InstrState::decode(opcode)
+                } else {
+                    InstrState::Simple(self.state.clone())
+                });
+                return (new_state, output);
+            }
+        }
+    }
+
+    fn read(&mut self) -> Option<CpuOutput> {
+        match self.state.decoded_instr.src {
+            SimpleInstrSrc::DerefHl => match self.phase {
+                Tick => Some(Some(BusOp::Read(self.regs.hl()))),
+                Tock => {
+                    self.state.micro_step = MicroStep::Action(self.input.data.unwrap());
+                    Some(None)
+                }
+            },
+            SimpleInstrSrc::Reg(r) => {
+                self.state.micro_step = MicroStep::Action(*self.regs.reg(r));
+                None
+            }
+        }
+    }
+
+    fn act(&mut self, operand: u8) -> Option<CpuOutput> {
+        match self.state.decoded_instr.action {
+            SimpleInstrAction::Ld => {
+                self.state.micro_step = MicroStep::Write(operand);
+                None
+            }
+        }
+    }
+
+    fn write(&mut self, result: u8) -> Option<CpuOutput> {
+        if let Some(dest) = self.state.decoded_instr.dest {
+            match dest {
+                SimpleInstrDest::DerefHl => match self.phase {
+                    Tick => Some(Some(BusOp::Write(self.regs.hl(), result))),
+                    Tock => {
+                        self.state.micro_step = MicroStep::Fetch;
+                        Some(None)
+                    }
+                },
+                SimpleInstrDest::Reg(r) => {
+                    *self.regs.reg(r) = result;
+                    self.state.micro_step = MicroStep::Fetch;
+                    None
+                }
+            }
+        } else {
+            None
+        }
+    }
+
+    fn fetch(&mut self) -> (Option<Opcode>, Option<CpuOutput>) {
+        match self.phase {
+            Tick => (None, Some(Some(BusOp::Read(self.regs.pc)))),
+            Tock => {
+                self.regs.pc += 1;
+                (Some(Opcode(self.input.data.unwrap())), Some(None))
+            }
+        }
+    }
+}
+
+struct ComplexInstrExecution<'a> {
+    regs: &'a mut Regs,
+    state: &'a ComplexInstrState,
+    phase: &'a Phase,
+    next_state: CpuState,
+    input: &'a CpuInput,
+}
+
+impl<'a> ComplexInstrExecution<'a> {
     fn exec_instr(mut self) -> (CpuState, CpuOutput) {
         let output = match self.state.opcode.split() {
             (0b00, 0b000, 0b000) => self.nop(),
             (0b01, 0b110, 0b110) => self.halt(),
-            (0b01, 0b110, src) => self.ld_deref_hl_r(src.into()),
-            (0b01, dest, 0b110) => self.ld_r_deref_hl(dest.into()),
-            (0b01, dest, src) => self.ld_r_r(dest.into(), src.into()),
             (0b10, 0b000, 0b110) => self.addition_deref_hl(false),
             (0b10, 0b000, src) => self.add(src.into(), false),
             (0b10, 0b001, 0b110) => self.addition_deref_hl(self.regs.f.cy),
@@ -167,45 +355,12 @@ impl<'a> RunningCpu<'a> {
         self.fetch()
     }
 
-    fn ld_r_r(&mut self, dest: R, src: R) -> CpuOutput {
-        match (self.state.m_cycle, self.state.phase) {
-            (M1, Tick) => self.fetch(),
-            (M1, Tock) => {
-                let value = *self.regs.reg(src);
-                *self.regs.reg(dest) = value;
-                self.fetch()
-            }
-            _ => unreachable!(),
-        }
-    }
-
-    fn ld_r_deref_hl(&mut self, dest: R) -> CpuOutput {
-        match (self.state.m_cycle, self.state.phase) {
-            (M1, Tick) => Some(BusOp::Read(self.regs.hl())),
-            (M1, Tock) => {
-                *self.regs.reg(dest) = self.input.data.unwrap();
-                None
-            }
-            (M2, _) => self.fetch(),
-            _ => unreachable!(),
-        }
-    }
-
-    fn ld_deref_hl_r(&mut self, src: R) -> CpuOutput {
-        match (self.state.m_cycle, self.state.phase) {
-            (M1, Tick) => Some(BusOp::Write(self.regs.hl(), *self.regs.reg(src))),
-            (M1, Tock) => None,
-            (M2, _) => self.fetch(),
-            _ => unreachable!(),
-        }
-    }
-
     fn halt(&mut self) -> CpuOutput {
         unimplemented!()
     }
 
     fn add(&mut self, r: R, carry_in: bool) -> CpuOutput {
-        match (self.state.m_cycle, self.state.phase) {
+        match (self.state.m_cycle, *self.phase) {
             (M1, Tick) => self.fetch(),
             (M1, Tock) => {
                 let output = alu_addition(&AluInput {
@@ -222,7 +377,7 @@ impl<'a> RunningCpu<'a> {
     }
 
     fn addition_deref_hl(&mut self, carry_in: bool) -> CpuOutput {
-        match (self.state.m_cycle, self.state.phase) {
+        match (self.state.m_cycle, *self.phase) {
             (M1, Tick) => Some(BusOp::Read(self.regs.hl())),
             (M1, Tock) => {
                 let output = alu_addition(&AluInput {
@@ -240,7 +395,7 @@ impl<'a> RunningCpu<'a> {
     }
 
     fn ret(&mut self) -> CpuOutput {
-        match (self.state.m_cycle, self.state.phase) {
+        match (self.state.m_cycle, *self.phase) {
             (M1, Tick) => Some(BusOp::Read(self.regs.sp)),
             (M1, Tock) => {
                 self.regs.pc = self.input.data.unwrap().into();
@@ -260,15 +415,12 @@ impl<'a> RunningCpu<'a> {
     }
 
     fn fetch(&mut self) -> CpuOutput {
-        match self.state.phase {
+        match self.phase {
             Phase::Tick => Some(BusOp::Read(self.regs.pc)),
             Phase::Tock => {
                 self.regs.pc += 1;
-                self.next_state = CpuState::Running(RunningState {
-                    opcode: Opcode(self.input.data.unwrap()),
-                    m_cycle: M1,
-                    phase: Tick,
-                });
+                self.next_state =
+                    CpuState::Running(InstrState::decode(Opcode(self.input.data.unwrap())));
                 None
             }
         }
