@@ -45,28 +45,28 @@ impl InstrExecState {
     fn decode(opcode: Opcode) -> Self {
         match opcode.split() {
             (0b01, 0b110, src) => InstrExecState::Simple(SimpleInstrExecState {
-                decoded_instr: DecodedInstr {
-                    src: SimpleInstrSrc::Reg(src.into()),
-                    action: SimpleInstrAction::Ld,
-                    dest: Some(SimpleInstrDest::DerefHl),
+                instr: SimpleInstr {
+                    src: Src::Reg(src.into()),
+                    op: Op::Ld,
+                    dest: Some(Dest::DerefHl),
                 },
-                micro_step: MicroStep::Read,
+                step: MicroStep::Read,
             }),
             (0b01, dest, 0b110) => InstrExecState::Simple(SimpleInstrExecState {
-                decoded_instr: DecodedInstr {
-                    src: SimpleInstrSrc::DerefHl,
-                    action: SimpleInstrAction::Ld,
-                    dest: Some(SimpleInstrDest::Reg(dest.into())),
+                instr: SimpleInstr {
+                    src: Src::DerefHl,
+                    op: Op::Ld,
+                    dest: Some(Dest::Reg(dest.into())),
                 },
-                micro_step: MicroStep::Read,
+                step: MicroStep::Read,
             }),
             (0b01, dest, src) => InstrExecState::Simple(SimpleInstrExecState {
-                decoded_instr: DecodedInstr {
-                    src: SimpleInstrSrc::Reg(src.into()),
-                    action: SimpleInstrAction::Ld,
-                    dest: Some(SimpleInstrDest::Reg(dest.into())),
+                instr: SimpleInstr {
+                    src: Src::Reg(src.into()),
+                    op: Op::Ld,
+                    dest: Some(Dest::Reg(dest.into())),
                 },
-                micro_step: MicroStep::Read,
+                step: MicroStep::Read,
             }),
             _ => InstrExecState::Complex(ComplexInstrExecState {
                 opcode,
@@ -83,32 +83,32 @@ struct ComplexInstrExecState {
 
 #[derive(Clone)]
 struct SimpleInstrExecState {
-    decoded_instr: DecodedInstr,
-    micro_step: MicroStep,
+    instr: SimpleInstr,
+    step: MicroStep,
 }
 
 #[derive(Clone)]
-struct DecodedInstr {
-    src: SimpleInstrSrc,
-    action: SimpleInstrAction,
-    dest: Option<SimpleInstrDest>,
+struct SimpleInstr {
+    src: Src,
+    op: Op,
+    dest: Option<Dest>,
 }
 
 #[derive(Clone)]
-enum SimpleInstrSrc {
-    DerefHl,
+enum Src {
     Reg(R),
+    DerefHl,
 }
 
 #[derive(Clone)]
-enum SimpleInstrAction {
+enum Op {
     Ld,
 }
 
 #[derive(Clone, Copy)]
-enum SimpleInstrDest {
-    DerefHl,
+enum Dest {
     Reg(R),
+    DerefHl,
 }
 
 #[derive(Clone)]
@@ -216,6 +216,13 @@ struct RunningCpu<'a> {
 impl<'a> RunningCpu<'a> {
     fn step(&mut self) -> (CpuState, CpuOutput) {
         match self.state {
+            InstrExecState::Simple(state) => SimpleInstrExecution {
+                regs: self.regs,
+                state,
+                phase: self.phase,
+                input: self.input,
+            }
+            .step(),
             InstrExecState::Complex(state) => ComplexInstrExecution {
                 regs: self.regs,
                 next_state: {
@@ -233,13 +240,6 @@ impl<'a> RunningCpu<'a> {
                 input: self.input,
             }
             .exec_instr(),
-            InstrExecState::Simple(state) => SimpleInstrExecution {
-                regs: self.regs,
-                state,
-                phase: self.phase,
-                input: self.input,
-            }
-            .step(),
         }
     }
 }
@@ -254,7 +254,7 @@ struct SimpleInstrExecution<'a> {
 impl<'a> SimpleInstrExecution<'a> {
     fn step(&mut self) -> (CpuState, CpuOutput) {
         loop {
-            let (opcode, output) = match self.state.micro_step {
+            let (opcode, output) = match self.state.step {
                 MicroStep::Read => (None, self.read()),
                 MicroStep::Action(operand) => (None, self.act(operand)),
                 MicroStep::Write(result) => (None, self.write(result)),
@@ -272,45 +272,45 @@ impl<'a> SimpleInstrExecution<'a> {
     }
 
     fn read(&mut self) -> Option<CpuOutput> {
-        match self.state.decoded_instr.src {
-            SimpleInstrSrc::DerefHl => match self.phase {
+        match self.state.instr.src {
+            Src::Reg(r) => {
+                self.state.step = MicroStep::Action(*self.regs.reg(r));
+                None
+            }
+            Src::DerefHl => match self.phase {
                 Tick => Some(Some(BusOp::Read(self.regs.hl()))),
                 Tock => {
-                    self.state.micro_step = MicroStep::Action(self.input.data.unwrap());
+                    self.state.step = MicroStep::Action(self.input.data.unwrap());
                     Some(None)
                 }
             },
-            SimpleInstrSrc::Reg(r) => {
-                self.state.micro_step = MicroStep::Action(*self.regs.reg(r));
-                None
-            }
         }
     }
 
     fn act(&mut self, operand: u8) -> Option<CpuOutput> {
-        match self.state.decoded_instr.action {
-            SimpleInstrAction::Ld => {
-                self.state.micro_step = MicroStep::Write(operand);
+        match self.state.instr.op {
+            Op::Ld => {
+                self.state.step = MicroStep::Write(operand);
                 None
             }
         }
     }
 
     fn write(&mut self, result: u8) -> Option<CpuOutput> {
-        if let Some(dest) = self.state.decoded_instr.dest {
+        if let Some(dest) = self.state.instr.dest {
             match dest {
-                SimpleInstrDest::DerefHl => match self.phase {
+                Dest::Reg(r) => {
+                    *self.regs.reg(r) = result;
+                    self.state.step = MicroStep::Fetch;
+                    None
+                }
+                Dest::DerefHl => match self.phase {
                     Tick => Some(Some(BusOp::Write(self.regs.hl(), result))),
                     Tock => {
-                        self.state.micro_step = MicroStep::Fetch;
+                        self.state.step = MicroStep::Fetch;
                         Some(None)
                     }
                 },
-                SimpleInstrDest::Reg(r) => {
-                    *self.regs.reg(r) = result;
-                    self.state.micro_step = MicroStep::Fetch;
-                    None
-                }
             }
         } else {
             None
