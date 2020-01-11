@@ -33,18 +33,18 @@ struct CpuFlags {
 }
 
 enum CpuState {
-    Running(InstrState),
+    Running(InstrExecState),
 }
 
-enum InstrState {
-    Complex(ComplexInstrState),
-    Simple(SimpleInstrState),
+enum InstrExecState {
+    Simple(SimpleInstrExecState),
+    Complex(ComplexInstrExecState),
 }
 
-impl InstrState {
+impl InstrExecState {
     fn decode(opcode: Opcode) -> Self {
         match opcode.split() {
-            (0b01, 0b110, src) => InstrState::Simple(SimpleInstrState {
+            (0b01, 0b110, src) => InstrExecState::Simple(SimpleInstrExecState {
                 decoded_instr: DecodedInstr {
                     src: SimpleInstrSrc::Reg(src.into()),
                     action: SimpleInstrAction::Ld,
@@ -52,7 +52,7 @@ impl InstrState {
                 },
                 micro_step: MicroStep::Read,
             }),
-            (0b01, dest, 0b110) => InstrState::Simple(SimpleInstrState {
+            (0b01, dest, 0b110) => InstrExecState::Simple(SimpleInstrExecState {
                 decoded_instr: DecodedInstr {
                     src: SimpleInstrSrc::DerefHl,
                     action: SimpleInstrAction::Ld,
@@ -60,7 +60,7 @@ impl InstrState {
                 },
                 micro_step: MicroStep::Read,
             }),
-            (0b01, dest, src) => InstrState::Simple(SimpleInstrState {
+            (0b01, dest, src) => InstrExecState::Simple(SimpleInstrExecState {
                 decoded_instr: DecodedInstr {
                     src: SimpleInstrSrc::Reg(src.into()),
                     action: SimpleInstrAction::Ld,
@@ -68,7 +68,7 @@ impl InstrState {
                 },
                 micro_step: MicroStep::Read,
             }),
-            _ => InstrState::Complex(ComplexInstrState {
+            _ => InstrExecState::Complex(ComplexInstrExecState {
                 opcode,
                 m_cycle: M1,
             }),
@@ -76,13 +76,13 @@ impl InstrState {
     }
 }
 
-struct ComplexInstrState {
+struct ComplexInstrExecState {
     opcode: Opcode,
     m_cycle: MCycle,
 }
 
 #[derive(Clone)]
-struct SimpleInstrState {
+struct SimpleInstrExecState {
     decoded_instr: DecodedInstr,
     micro_step: MicroStep,
 }
@@ -153,13 +153,13 @@ impl Default for Cpu {
     fn default() -> Self {
         Self {
             regs: Default::default(),
-            state: CpuState::Running(InstrState::Complex(Default::default())),
+            state: CpuState::Running(InstrExecState::Complex(Default::default())),
             phase: Tick,
         }
     }
 }
 
-impl Default for ComplexInstrState {
+impl Default for ComplexInstrExecState {
     fn default() -> Self {
         Self {
             opcode: Opcode(0x00),
@@ -208,7 +208,7 @@ impl Cpu {
 
 struct RunningCpu<'a> {
     regs: &'a mut Regs,
-    state: &'a mut InstrState,
+    state: &'a mut InstrExecState,
     phase: &'a Phase,
     input: &'a CpuInput,
 }
@@ -216,14 +216,14 @@ struct RunningCpu<'a> {
 impl<'a> RunningCpu<'a> {
     fn step(&mut self) -> (CpuState, CpuOutput) {
         match self.state {
-            InstrState::Complex(state) => ComplexInstrExecution {
+            InstrExecState::Complex(state) => ComplexInstrExecution {
                 regs: self.regs,
                 next_state: {
                     let m_cycle = match self.phase {
                         Tick => state.m_cycle,
                         Tock => state.m_cycle.next(),
                     };
-                    CpuState::Running(InstrState::Complex(ComplexInstrState {
+                    CpuState::Running(InstrExecState::Complex(ComplexInstrExecState {
                         opcode: state.opcode,
                         m_cycle,
                     }))
@@ -233,7 +233,7 @@ impl<'a> RunningCpu<'a> {
                 input: self.input,
             }
             .exec_instr(),
-            InstrState::Simple(state) => SimpleInstrExecution {
+            InstrExecState::Simple(state) => SimpleInstrExecution {
                 regs: self.regs,
                 state,
                 phase: self.phase,
@@ -246,7 +246,7 @@ impl<'a> RunningCpu<'a> {
 
 struct SimpleInstrExecution<'a> {
     regs: &'a mut Regs,
-    state: &'a mut SimpleInstrState,
+    state: &'a mut SimpleInstrExecState,
     phase: &'a Phase,
     input: &'a CpuInput,
 }
@@ -262,9 +262,9 @@ impl<'a> SimpleInstrExecution<'a> {
             };
             if let Some(output) = output {
                 let new_state = CpuState::Running(if let Some(opcode) = opcode {
-                    InstrState::decode(opcode)
+                    InstrExecState::decode(opcode)
                 } else {
-                    InstrState::Simple(self.state.clone())
+                    InstrExecState::Simple(self.state.clone())
                 });
                 return (new_state, output);
             }
@@ -330,7 +330,7 @@ impl<'a> SimpleInstrExecution<'a> {
 
 struct ComplexInstrExecution<'a> {
     regs: &'a mut Regs,
-    state: &'a ComplexInstrState,
+    state: &'a ComplexInstrExecState,
     phase: &'a Phase,
     next_state: CpuState,
     input: &'a CpuInput,
@@ -420,7 +420,7 @@ impl<'a> ComplexInstrExecution<'a> {
             Phase::Tock => {
                 self.regs.pc += 1;
                 self.next_state =
-                    CpuState::Running(InstrState::decode(Opcode(self.input.data.unwrap())));
+                    CpuState::Running(InstrExecState::decode(Opcode(self.input.data.unwrap())));
                 None
             }
         }
