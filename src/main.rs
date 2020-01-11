@@ -33,7 +33,11 @@ struct CpuFlags {
 }
 
 enum CpuState {
-    Running(InstrExecState),
+    Running(RunningCpuState),
+}
+
+enum RunningCpuState {
+    InstrExec(InstrExecState),
 }
 
 enum InstrExecState {
@@ -41,34 +45,19 @@ enum InstrExecState {
     Complex(ComplexInstrExecState),
 }
 
+enum DecodedOpcode {
+    Simple(SimpleInstr),
+    Complex(Opcode),
+}
+
 impl InstrExecState {
-    fn decode(opcode: Opcode) -> Self {
-        match opcode.split() {
-            (0b01, 0b110, src) => InstrExecState::Simple(SimpleInstrExecState {
-                instr: SimpleInstr {
-                    src: Src::Reg(src.into()),
-                    op: Op::Ld,
-                    dest: Some(Dest::DerefHl),
-                },
+    fn new(decoded_opcode: DecodedOpcode) -> Self {
+        match decoded_opcode {
+            DecodedOpcode::Simple(instr) => InstrExecState::Simple(SimpleInstrExecState {
+                instr,
                 step: MicroStep::Read,
             }),
-            (0b01, dest, 0b110) => InstrExecState::Simple(SimpleInstrExecState {
-                instr: SimpleInstr {
-                    src: Src::DerefHl,
-                    op: Op::Ld,
-                    dest: Some(Dest::Reg(dest.into())),
-                },
-                step: MicroStep::Read,
-            }),
-            (0b01, dest, src) => InstrExecState::Simple(SimpleInstrExecState {
-                instr: SimpleInstr {
-                    src: Src::Reg(src.into()),
-                    op: Op::Ld,
-                    dest: Some(Dest::Reg(dest.into())),
-                },
-                step: MicroStep::Read,
-            }),
-            _ => InstrExecState::Complex(ComplexInstrExecState {
+            DecodedOpcode::Complex(opcode) => InstrExecState::Complex(ComplexInstrExecState {
                 opcode,
                 m_cycle: M1,
             }),
@@ -123,6 +112,27 @@ enum MicroStep {
 struct Opcode(u8);
 
 impl Opcode {
+    fn decode(self) -> Option<DecodedOpcode> {
+        match self.split() {
+            (0b01, 0b110, src) => Some(DecodedOpcode::Simple(SimpleInstr {
+                src: Src::Reg(src.into()),
+                op: Op::Ld,
+                dest: Some(Dest::DerefHl),
+            })),
+            (0b01, dest, 0b110) => Some(DecodedOpcode::Simple(SimpleInstr {
+                src: Src::DerefHl,
+                op: Op::Ld,
+                dest: Some(Dest::Reg(dest.into())),
+            })),
+            (0b01, dest, src) => Some(DecodedOpcode::Simple(SimpleInstr {
+                src: Src::Reg(src.into()),
+                op: Op::Ld,
+                dest: Some(Dest::Reg(dest.into())),
+            })),
+            _ => Some(DecodedOpcode::Complex(self)),
+        }
+    }
+
     fn split(self) -> (u8, u8, u8) {
         (self.0 >> 6, (self.0 >> 3) & 0b111, self.0 & 0b111)
     }
@@ -153,7 +163,9 @@ impl Default for Cpu {
     fn default() -> Self {
         Self {
             regs: Default::default(),
-            state: CpuState::Running(InstrExecState::Complex(Default::default())),
+            state: CpuState::Running(RunningCpuState::InstrExec(InstrExecState::Complex(
+                Default::default(),
+            ))),
             phase: Tick,
         }
     }
@@ -208,7 +220,7 @@ impl Cpu {
 
 struct RunningCpu<'a> {
     regs: &'a mut Regs,
-    state: &'a mut InstrExecState,
+    state: &'a mut RunningCpuState,
     phase: &'a Phase,
     input: &'a CpuInput,
 }
@@ -216,24 +228,26 @@ struct RunningCpu<'a> {
 impl<'a> RunningCpu<'a> {
     fn step(&mut self) -> (CpuState, CpuOutput) {
         match self.state {
-            InstrExecState::Simple(state) => SimpleInstrExecution {
+            RunningCpuState::InstrExec(InstrExecState::Simple(state)) => SimpleInstrExecution {
                 regs: self.regs,
                 state,
                 phase: self.phase,
                 input: self.input,
             }
             .step(),
-            InstrExecState::Complex(state) => ComplexInstrExecution {
+            RunningCpuState::InstrExec(InstrExecState::Complex(state)) => ComplexInstrExecution {
                 regs: self.regs,
                 next_state: {
                     let m_cycle = match self.phase {
                         Tick => state.m_cycle,
                         Tock => state.m_cycle.next(),
                     };
-                    CpuState::Running(InstrExecState::Complex(ComplexInstrExecState {
-                        opcode: state.opcode,
-                        m_cycle,
-                    }))
+                    CpuState::Running(RunningCpuState::InstrExec(InstrExecState::Complex(
+                        ComplexInstrExecState {
+                            opcode: state.opcode,
+                            m_cycle,
+                        },
+                    )))
                 },
                 state,
                 phase: self.phase,
@@ -261,12 +275,13 @@ impl<'a> SimpleInstrExecution<'a> {
                 MicroStep::Fetch => self.fetch(),
             };
             if let Some(output) = output {
-                let new_state = CpuState::Running(if let Some(opcode) = opcode {
-                    InstrExecState::decode(opcode)
-                } else {
-                    InstrExecState::Simple(self.state.clone())
+                let next_state = CpuState::Running(match opcode {
+                    Some(opcode) => {
+                        RunningCpuState::InstrExec(InstrExecState::new(opcode.decode().unwrap()))
+                    }
+                    None => RunningCpuState::InstrExec(InstrExecState::Simple(self.state.clone())),
                 });
-                return (new_state, output);
+                return (next_state, output);
             }
         }
     }
@@ -419,8 +434,9 @@ impl<'a> ComplexInstrExecution<'a> {
             Phase::Tick => Some(BusOp::Read(self.regs.pc)),
             Phase::Tock => {
                 self.regs.pc += 1;
-                self.next_state =
-                    CpuState::Running(InstrExecState::decode(Opcode(self.input.data.unwrap())));
+                self.next_state = CpuState::Running(RunningCpuState::InstrExec(
+                    InstrExecState::new(Opcode(self.input.data.unwrap()).decode().unwrap()),
+                ));
                 None
             }
         }
