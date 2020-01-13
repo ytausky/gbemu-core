@@ -24,7 +24,7 @@ struct Regs {
     sp: u16,
 }
 
-#[derive(Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 struct CpuFlags {
     z: bool,
     n: bool,
@@ -80,22 +80,23 @@ struct SimpleInstrExecState {
 struct SimpleInstr {
     src: Src,
     op: Op,
-    dest: Option<Dest>,
+    dest: Option<CommonOperand>,
 }
 
 #[derive(Clone)]
 enum Src {
-    Reg(R),
-    DerefHl,
+    Common(CommonOperand),
 }
 
 #[derive(Clone)]
 enum Op {
     Ld,
+    Add,
+    Adc,
 }
 
 #[derive(Clone, Copy)]
-enum Dest {
+enum CommonOperand {
     Reg(R),
     DerefHl,
 }
@@ -104,7 +105,7 @@ enum Dest {
 enum MicroStep {
     Read,
     Action(u8),
-    Write(u8),
+    Write(AluOutput),
     Fetch,
 }
 
@@ -114,20 +115,20 @@ struct Opcode(u8);
 impl Opcode {
     fn decode(self) -> Option<DecodedOpcode> {
         match self.split() {
-            (0b01, 0b110, src) => Some(DecodedOpcode::Simple(SimpleInstr {
-                src: Src::Reg(src.into()),
-                op: Op::Ld,
-                dest: Some(Dest::DerefHl),
-            })),
-            (0b01, dest, 0b110) => Some(DecodedOpcode::Simple(SimpleInstr {
-                src: Src::DerefHl,
-                op: Op::Ld,
-                dest: Some(Dest::Reg(dest.into())),
-            })),
             (0b01, dest, src) => Some(DecodedOpcode::Simple(SimpleInstr {
-                src: Src::Reg(src.into()),
+                src: Src::Common(src.into()),
                 op: Op::Ld,
-                dest: Some(Dest::Reg(dest.into())),
+                dest: Some(dest.into()),
+            })),
+            (0b10, 0b000, src) => Some(DecodedOpcode::Simple(SimpleInstr {
+                src: Src::Common(src.into()),
+                op: Op::Add,
+                dest: Some(CommonOperand::Reg(R::A)),
+            })),
+            (0b10, 0b001, src) => Some(DecodedOpcode::Simple(SimpleInstr {
+                src: Src::Common(src.into()),
+                op: Op::Adc,
+                dest: Some(CommonOperand::Reg(R::A)),
             })),
             _ => Some(DecodedOpcode::Complex(self)),
         }
@@ -266,10 +267,16 @@ struct SimpleInstrExecution<'a> {
 impl<'a> SimpleInstrExecution<'a> {
     fn step(&mut self) -> (Mode, CpuOutput) {
         loop {
-            let output = match self.state.step {
+            let output = match &self.state.step {
                 MicroStep::Read => self.read(),
-                MicroStep::Action(operand) => self.act(operand),
-                MicroStep::Write(result) => self.write(result),
+                MicroStep::Action(operand) => {
+                    let operand = *operand;
+                    self.act(operand)
+                }
+                MicroStep::Write(result) => {
+                    let result = result.clone();
+                    self.write(result)
+                }
                 MicroStep::Fetch => match self.phase {
                     Tick => Some(Some(BusOp::Read(self.regs.pc))),
                     Tock => {
@@ -294,11 +301,11 @@ impl<'a> SimpleInstrExecution<'a> {
 
     fn read(&mut self) -> Option<CpuOutput> {
         match self.state.instr.src {
-            Src::Reg(r) => {
+            Src::Common(CommonOperand::Reg(r)) => {
                 self.state.step = MicroStep::Action(*self.regs.reg(r));
                 None
             }
-            Src::DerefHl => match self.phase {
+            Src::Common(CommonOperand::DerefHl) => match self.phase {
                 Tick => Some(Some(BusOp::Read(self.regs.hl()))),
                 Tock => {
                     self.state.step = MicroStep::Action(self.input.data.unwrap());
@@ -309,24 +316,37 @@ impl<'a> SimpleInstrExecution<'a> {
     }
 
     fn act(&mut self, operand: u8) -> Option<CpuOutput> {
-        match self.state.instr.op {
-            Op::Ld => {
-                self.state.step = MicroStep::Write(operand);
-                None
-            }
-        }
+        let output = match self.state.instr.op {
+            Op::Ld => AluOutput {
+                result: operand,
+                flags: self.regs.f.clone(),
+            },
+            Op::Add => alu_addition(&AluInput {
+                x: self.regs.a,
+                y: operand,
+                carry_in: false,
+            }),
+            Op::Adc => alu_addition(&AluInput {
+                x: self.regs.a,
+                y: operand,
+                carry_in: self.regs.f.cy,
+            }),
+        };
+        self.state.step = MicroStep::Write(output);
+        None
     }
 
-    fn write(&mut self, result: u8) -> Option<CpuOutput> {
+    fn write(&mut self, output: AluOutput) -> Option<CpuOutput> {
+        self.regs.f = output.flags;
         if let Some(dest) = self.state.instr.dest {
             match dest {
-                Dest::Reg(r) => {
-                    *self.regs.reg(r) = result;
+                CommonOperand::Reg(r) => {
+                    *self.regs.reg(r) = output.result;
                     self.state.step = MicroStep::Fetch;
                     None
                 }
-                Dest::DerefHl => match self.phase {
-                    Tick => Some(Some(BusOp::Write(self.regs.hl(), result))),
+                CommonOperand::DerefHl => match self.phase {
+                    Tick => Some(Some(BusOp::Write(self.regs.hl(), output.result))),
                     Tock => {
                         self.state.step = MicroStep::Fetch;
                         Some(None)
@@ -352,10 +372,6 @@ impl<'a> ComplexInstrExecution<'a> {
         let output = match self.state.opcode.split() {
             (0b00, 0b000, 0b000) => self.nop(),
             (0b01, 0b110, 0b110) => self.halt(),
-            (0b10, 0b000, 0b110) => self.addition_deref_hl(false),
-            (0b10, 0b000, src) => self.add(src.into(), false),
-            (0b10, 0b001, 0b110) => self.addition_deref_hl(self.regs.f.cy),
-            (0b10, 0b001, src) => self.add(src.into(), self.regs.f.cy),
             (0b11, 0b001, 0b001) => self.ret(),
             _ => unimplemented!(),
         };
@@ -368,41 +384,6 @@ impl<'a> ComplexInstrExecution<'a> {
 
     fn halt(&mut self) -> CpuOutput {
         unimplemented!()
-    }
-
-    fn add(&mut self, r: R, carry_in: bool) -> CpuOutput {
-        match (self.state.m_cycle, *self.phase) {
-            (M1, Tick) => self.fetch(),
-            (M1, Tock) => {
-                let output = alu_addition(&AluInput {
-                    x: self.regs.a,
-                    y: *self.regs.reg(r),
-                    carry_in,
-                });
-                self.regs.a = output.result;
-                self.regs.f = output.flags;
-                self.fetch()
-            }
-            _ => unreachable!(),
-        }
-    }
-
-    fn addition_deref_hl(&mut self, carry_in: bool) -> CpuOutput {
-        match (self.state.m_cycle, *self.phase) {
-            (M1, Tick) => Some(BusOp::Read(self.regs.hl())),
-            (M1, Tock) => {
-                let output = alu_addition(&AluInput {
-                    x: self.regs.a,
-                    y: self.input.data.unwrap(),
-                    carry_in,
-                });
-                self.regs.a = output.result;
-                self.regs.f = output.flags;
-                None
-            }
-            (M2, _) => self.fetch(),
-            _ => unreachable!(),
-        }
     }
 
     fn ret(&mut self) -> CpuOutput {
@@ -459,6 +440,7 @@ struct AluInput {
     carry_in: bool,
 }
 
+#[derive(Clone)]
 struct AluOutput {
     result: u8,
     flags: CpuFlags,
@@ -479,16 +461,17 @@ enum R {
     L,
 }
 
-impl From<u8> for R {
+impl From<u8> for CommonOperand {
     fn from(encoding: u8) -> Self {
         match encoding {
-            0b000 => R::B,
-            0b001 => R::C,
-            0b010 => R::D,
-            0b011 => R::E,
-            0b100 => R::H,
-            0b101 => R::L,
-            0b111 => R::A,
+            0b000 => CommonOperand::Reg(R::B),
+            0b001 => CommonOperand::Reg(R::C),
+            0b010 => CommonOperand::Reg(R::D),
+            0b011 => CommonOperand::Reg(R::E),
+            0b100 => CommonOperand::Reg(R::H),
+            0b101 => CommonOperand::Reg(R::L),
+            0b110 => CommonOperand::DerefHl,
+            0b111 => CommonOperand::Reg(R::A),
             _ => panic!(),
         }
     }
