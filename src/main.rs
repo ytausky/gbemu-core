@@ -266,18 +266,28 @@ struct SimpleInstrExecution<'a> {
 impl<'a> SimpleInstrExecution<'a> {
     fn step(&mut self) -> (Mode, CpuOutput) {
         loop {
-            let (opcode, output) = match self.state.step {
-                MicroStep::Read => (None, self.read()),
-                MicroStep::Action(operand) => (None, self.act(operand)),
-                MicroStep::Write(result) => (None, self.write(result)),
-                MicroStep::Fetch => self.fetch(),
+            let output = match self.state.step {
+                MicroStep::Read => self.read(),
+                MicroStep::Action(operand) => self.act(operand),
+                MicroStep::Write(result) => self.write(result),
+                MicroStep::Fetch => match self.phase {
+                    Tick => Some(Some(BusOp::Read(self.regs.pc))),
+                    Tock => {
+                        self.regs.pc += 1;
+                        return (
+                            Mode::Run(Stage::Execute(ExecuteState::new(
+                                Opcode(self.input.data.unwrap()).decode().unwrap(),
+                            ))),
+                            None,
+                        );
+                    }
+                },
             };
             if let Some(output) = output {
-                let new_mode = Mode::Run(match opcode {
-                    Some(opcode) => Stage::Execute(ExecuteState::new(opcode.decode().unwrap())),
-                    None => Stage::Execute(ExecuteState::Simple(self.state.clone())),
-                });
-                return (new_mode, output);
+                return (
+                    Mode::Run(Stage::Execute(ExecuteState::Simple(self.state.clone()))),
+                    output,
+                );
             }
         }
     }
@@ -325,16 +335,6 @@ impl<'a> SimpleInstrExecution<'a> {
             }
         } else {
             None
-        }
-    }
-
-    fn fetch(&mut self) -> (Option<Opcode>, Option<CpuOutput>) {
-        match self.phase {
-            Tick => (None, Some(Some(BusOp::Read(self.regs.pc)))),
-            Tock => {
-                self.regs.pc += 1;
-                (Some(Opcode(self.input.data.unwrap())), Some(None))
-            }
         }
     }
 }
