@@ -6,7 +6,7 @@ fn main() {
 
 pub struct Cpu {
     regs: Regs,
-    state: CpuState,
+    mode: Mode,
     phase: Phase,
 }
 
@@ -32,15 +32,15 @@ struct CpuFlags {
     cy: bool,
 }
 
-enum CpuState {
-    Running(RunningCpuState),
+enum Mode {
+    Run(Stage),
 }
 
-enum RunningCpuState {
-    InstrExec(InstrExecState),
+enum Stage {
+    Execute(ExecuteState),
 }
 
-enum InstrExecState {
+enum ExecuteState {
     Simple(SimpleInstrExecState),
     Complex(ComplexInstrExecState),
 }
@@ -50,14 +50,14 @@ enum DecodedOpcode {
     Complex(Opcode),
 }
 
-impl InstrExecState {
+impl ExecuteState {
     fn new(decoded_opcode: DecodedOpcode) -> Self {
         match decoded_opcode {
-            DecodedOpcode::Simple(instr) => InstrExecState::Simple(SimpleInstrExecState {
+            DecodedOpcode::Simple(instr) => ExecuteState::Simple(SimpleInstrExecState {
                 instr,
                 step: MicroStep::Read,
             }),
-            DecodedOpcode::Complex(opcode) => InstrExecState::Complex(ComplexInstrExecState {
+            DecodedOpcode::Complex(opcode) => ExecuteState::Complex(ComplexInstrExecState {
                 opcode,
                 m_cycle: M1,
             }),
@@ -163,9 +163,7 @@ impl Default for Cpu {
     fn default() -> Self {
         Self {
             regs: Default::default(),
-            state: CpuState::Running(RunningCpuState::InstrExec(InstrExecState::Complex(
-                Default::default(),
-            ))),
+            mode: Mode::Run(Stage::Execute(ExecuteState::Complex(Default::default()))),
             phase: Tick,
         }
     }
@@ -200,16 +198,16 @@ impl Regs {
 
 impl Cpu {
     pub fn step(&mut self, input: &CpuInput) -> CpuOutput {
-        let (next_state, output) = match &mut self.state {
-            CpuState::Running(state) => RunningCpu {
+        let (new_mode, output) = match &mut self.mode {
+            Mode::Run(stage) => RunModeCpu {
                 regs: &mut self.regs,
-                state,
+                stage,
                 phase: &self.phase,
                 input,
             }
             .step(),
         };
-        self.state = next_state;
+        self.mode = new_mode;
         self.phase = match self.phase {
             Tick => Tock,
             Tock => Tick,
@@ -218,31 +216,31 @@ impl Cpu {
     }
 }
 
-struct RunningCpu<'a> {
+struct RunModeCpu<'a> {
     regs: &'a mut Regs,
-    state: &'a mut RunningCpuState,
+    stage: &'a mut Stage,
     phase: &'a Phase,
     input: &'a CpuInput,
 }
 
-impl<'a> RunningCpu<'a> {
-    fn step(&mut self) -> (CpuState, CpuOutput) {
-        match self.state {
-            RunningCpuState::InstrExec(InstrExecState::Simple(state)) => SimpleInstrExecution {
+impl<'a> RunModeCpu<'a> {
+    fn step(&mut self) -> (Mode, CpuOutput) {
+        match self.stage {
+            Stage::Execute(ExecuteState::Simple(state)) => SimpleInstrExecution {
                 regs: self.regs,
                 state,
                 phase: self.phase,
                 input: self.input,
             }
             .step(),
-            RunningCpuState::InstrExec(InstrExecState::Complex(state)) => ComplexInstrExecution {
+            Stage::Execute(ExecuteState::Complex(state)) => ComplexInstrExecution {
                 regs: self.regs,
-                next_state: {
+                new_mode: {
                     let m_cycle = match self.phase {
                         Tick => state.m_cycle,
                         Tock => state.m_cycle.next(),
                     };
-                    CpuState::Running(RunningCpuState::InstrExec(InstrExecState::Complex(
+                    Mode::Run(Stage::Execute(ExecuteState::Complex(
                         ComplexInstrExecState {
                             opcode: state.opcode,
                             m_cycle,
@@ -266,7 +264,7 @@ struct SimpleInstrExecution<'a> {
 }
 
 impl<'a> SimpleInstrExecution<'a> {
-    fn step(&mut self) -> (CpuState, CpuOutput) {
+    fn step(&mut self) -> (Mode, CpuOutput) {
         loop {
             let (opcode, output) = match self.state.step {
                 MicroStep::Read => (None, self.read()),
@@ -275,13 +273,11 @@ impl<'a> SimpleInstrExecution<'a> {
                 MicroStep::Fetch => self.fetch(),
             };
             if let Some(output) = output {
-                let next_state = CpuState::Running(match opcode {
-                    Some(opcode) => {
-                        RunningCpuState::InstrExec(InstrExecState::new(opcode.decode().unwrap()))
-                    }
-                    None => RunningCpuState::InstrExec(InstrExecState::Simple(self.state.clone())),
+                let new_mode = Mode::Run(match opcode {
+                    Some(opcode) => Stage::Execute(ExecuteState::new(opcode.decode().unwrap())),
+                    None => Stage::Execute(ExecuteState::Simple(self.state.clone())),
                 });
-                return (next_state, output);
+                return (new_mode, output);
             }
         }
     }
@@ -347,12 +343,12 @@ struct ComplexInstrExecution<'a> {
     regs: &'a mut Regs,
     state: &'a ComplexInstrExecState,
     phase: &'a Phase,
-    next_state: CpuState,
+    new_mode: Mode,
     input: &'a CpuInput,
 }
 
 impl<'a> ComplexInstrExecution<'a> {
-    fn exec_instr(mut self) -> (CpuState, CpuOutput) {
+    fn exec_instr(mut self) -> (Mode, CpuOutput) {
         let output = match self.state.opcode.split() {
             (0b00, 0b000, 0b000) => self.nop(),
             (0b01, 0b110, 0b110) => self.halt(),
@@ -363,7 +359,7 @@ impl<'a> ComplexInstrExecution<'a> {
             (0b11, 0b001, 0b001) => self.ret(),
             _ => unimplemented!(),
         };
-        (self.next_state, output)
+        (self.new_mode, output)
     }
 
     fn nop(&mut self) -> CpuOutput {
@@ -434,9 +430,9 @@ impl<'a> ComplexInstrExecution<'a> {
             Phase::Tick => Some(BusOp::Read(self.regs.pc)),
             Phase::Tock => {
                 self.regs.pc += 1;
-                self.next_state = CpuState::Running(RunningCpuState::InstrExec(
-                    InstrExecState::new(Opcode(self.input.data.unwrap()).decode().unwrap()),
-                ));
+                self.new_mode = Mode::Run(Stage::Execute(ExecuteState::new(
+                    Opcode(self.input.data.unwrap()).decode().unwrap(),
+                )));
                 None
             }
         }
