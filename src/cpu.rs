@@ -507,7 +507,7 @@ mod tests {
         let data = 0x42;
         *cpu.regs.reg(src) = data;
         cpu.test_opcode(
-            encode_ld_r_r(dest, src),
+            &encode_ld_r_r(dest, src),
             &[
                 (CpuInput::with_data(None), Some(BusOp::Read(0x0001))),
                 (CpuInput::with_data(Some(0x00)), None),
@@ -516,8 +516,8 @@ mod tests {
         assert_eq!(*cpu.regs.reg(dest), data)
     }
 
-    fn encode_ld_r_r(dest: R, src: R) -> u8 {
-        0b01_000_000 | (dest.code() << 3) | src.code()
+    fn encode_ld_r_r(dest: R, src: R) -> Vec<u8> {
+        vec![0b01_000_000 | (dest.code() << 3) | src.code()]
     }
 
     impl R {
@@ -547,7 +547,7 @@ mod tests {
         cpu.regs.h = 0x12;
         cpu.regs.l = 0x34;
         cpu.test_opcode(
-            encode_ld_r_deref_hl(dest),
+            &encode_ld_r_deref_hl(dest),
             &[
                 (CpuInput::with_data(None), Some(BusOp::Read(0x1234))),
                 (CpuInput::with_data(Some(data)), None),
@@ -558,8 +558,8 @@ mod tests {
         assert_eq!(*cpu.regs.reg(dest), data)
     }
 
-    fn encode_ld_r_deref_hl(dest: R) -> u8 {
-        0b01_000_110 | (dest.code() << 3)
+    fn encode_ld_r_deref_hl(dest: R) -> Vec<u8> {
+        vec![0b01_000_110 | (dest.code() << 3)]
     }
 
     #[test]
@@ -576,7 +576,7 @@ mod tests {
         cpu.regs.l = 0x34;
         *cpu.regs.reg(src) = data;
         cpu.test_opcode(
-            encode_ld_deref_hl_r(src),
+            &encode_ld_deref_hl_r(src),
             &[
                 (
                     CpuInput::with_data(None),
@@ -589,8 +589,8 @@ mod tests {
         );
     }
 
-    fn encode_ld_deref_hl_r(src: R) -> u8 {
-        0b01_110_000 | src.code()
+    fn encode_ld_deref_hl_r(src: R) -> Vec<u8> {
+        vec![0b01_110_000 | src.code()]
     }
 
     #[test]
@@ -603,16 +603,16 @@ mod tests {
         }
     }
 
-    fn encode_add_a_r(r: R) -> u8 {
-        0b10_000_000 | r.code()
+    fn encode_add_a_r(r: R) -> Vec<u8> {
+        vec![0b10_000_000 | r.code()]
     }
 
     fn test_add_deref_hl(test_case: &AluTestCase) {
-        const ADD_DEREF_HL: u8 = 0x86;
+        const ADD_DEREF_HL: &[u8] = &[0x86];
         test_addition_deref_hl(ADD_DEREF_HL, test_case)
     }
 
-    fn test_addition_deref_hl(opcode: u8, test_case: &AluTestCase) {
+    fn test_addition_deref_hl(opcode: &[u8], test_case: &AluTestCase) {
         let mut cpu = Cpu::default();
         cpu.regs.a = test_case.input.x;
         cpu.regs.f.cy = test_case.input.carry_in;
@@ -639,16 +639,16 @@ mod tests {
         }
     }
 
-    fn encode_adc_a_r(r: R) -> u8 {
-        0b10_001_000 | r.code()
+    fn encode_adc_a_r(r: R) -> Vec<u8> {
+        vec![0b10_001_000 | r.code()]
     }
 
     fn test_adc_deref_hl(test_case: &AluTestCase) {
-        const ADC_A_DEREF_HL: u8 = 0x8e;
+        const ADC_A_DEREF_HL: &[u8] = &[0x8e];
         test_addition_deref_hl(ADC_A_DEREF_HL, test_case)
     }
 
-    fn test_adder_for_all_r<F: Fn(R) -> u8>(encoder: &F, test_case: &AluTestCase) {
+    fn test_adder_for_all_r<F: Fn(R) -> Vec<u8>>(encoder: &F, test_case: &AluTestCase) {
         if test_case.is_applicable_for_a() {
             test_adder(R::A, encoder, test_case)
         }
@@ -657,13 +657,13 @@ mod tests {
         }
     }
 
-    fn test_adder<F: Fn(R) -> u8>(r: R, encoder: &F, test_case: &AluTestCase) {
+    fn test_adder<F: Fn(R) -> Vec<u8>>(r: R, encoder: &F, test_case: &AluTestCase) {
         let mut cpu = Cpu::default();
         cpu.regs.a = test_case.input.x;
         *cpu.regs.reg(r) = test_case.input.y;
         cpu.regs.f.cy = test_case.input.carry_in;
         cpu.test_opcode(
-            encoder(r),
+            &encoder(r),
             &[
                 (CpuInput::with_data(None), Some(BusOp::Read(0x0001))),
                 (CpuInput::with_data(Some(0x00)), None),
@@ -783,7 +783,7 @@ mod tests {
         let mut cpu = Cpu::default();
         cpu.regs.sp = 0x1234;
         cpu.test_opcode(
-            0xc9,
+            &[0xc9],
             &[
                 (CpuInput::with_data(None), Some(BusOp::Read(0x1234))),
                 (CpuInput::with_data(Some(0x78)), None),
@@ -802,14 +802,17 @@ mod tests {
     impl Cpu {
         fn test_opcode<'a>(
             &mut self,
-            opcode: u8,
+            opcode: &[u8],
             steps: impl IntoIterator<Item = &'a (CpuInput, CpuOutput)>,
         ) {
-            assert_eq!(
-                self.step(&CpuInput::with_data(None)),
-                Some(BusOp::Read(0x0000))
-            );
-            assert_eq!(self.step(&CpuInput::with_data(Some(opcode))), None);
+            let pc = self.regs.pc;
+            for (i, byte) in opcode.iter().enumerate() {
+                assert_eq!(
+                    self.step(&CpuInput::with_data(None)),
+                    Some(BusOp::Read(pc + i as u16))
+                );
+                assert_eq!(self.step(&CpuInput::with_data(Some(*byte))), None);
+            }
             for (input, output) in steps {
                 assert_eq!(self.step(input), *output)
             }
