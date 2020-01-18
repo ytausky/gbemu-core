@@ -1,31 +1,31 @@
 use self::{MCycle::*, Phase::*};
 
 pub struct Cpu {
-    regs: Regs,
+    pub regs: Regs,
     mode: Mode,
     phase: Phase,
 }
 
 #[derive(Default)]
-struct Regs {
-    a: u8,
-    f: CpuFlags,
-    b: u8,
-    c: u8,
-    d: u8,
-    e: u8,
-    h: u8,
-    l: u8,
-    pc: u16,
-    sp: u16,
+pub struct Regs {
+    pub a: u8,
+    pub f: CpuFlags,
+    pub b: u8,
+    pub c: u8,
+    pub d: u8,
+    pub e: u8,
+    pub h: u8,
+    pub l: u8,
+    pub pc: u16,
+    pub sp: u16,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
-struct CpuFlags {
-    z: bool,
-    n: bool,
-    h: bool,
-    cy: bool,
+pub struct CpuFlags {
+    pub z: bool,
+    pub n: bool,
+    pub h: bool,
+    pub cy: bool,
 }
 
 enum Mode {
