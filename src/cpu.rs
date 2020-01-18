@@ -9,7 +9,7 @@ pub struct Cpu {
 #[derive(Default)]
 pub struct Regs {
     pub a: u8,
-    pub f: CpuFlags,
+    pub f: Flags,
     pub b: u8,
     pub c: u8,
     pub d: u8,
@@ -21,7 +21,7 @@ pub struct Regs {
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
-pub struct CpuFlags {
+pub struct Flags {
     pub z: bool,
     pub n: bool,
     pub h: bool,
@@ -194,7 +194,7 @@ impl Regs {
 }
 
 impl Cpu {
-    pub fn step(&mut self, input: &CpuInput) -> CpuOutput {
+    pub fn step(&mut self, input: &Input) -> CpuOutput {
         let (new_mode, output) = match &mut self.mode {
             Mode::Run(stage) => RunModeCpu {
                 regs: &mut self.regs,
@@ -217,7 +217,7 @@ struct RunModeCpu<'a> {
     regs: &'a mut Regs,
     stage: &'a mut Stage,
     phase: &'a Phase,
-    input: &'a CpuInput,
+    input: &'a Input,
 }
 
 impl<'a> RunModeCpu<'a> {
@@ -257,7 +257,7 @@ struct SimpleInstrExecution<'a> {
     regs: &'a mut Regs,
     state: &'a mut SimpleInstrExecState,
     phase: &'a Phase,
-    input: &'a CpuInput,
+    input: &'a Input,
 }
 
 impl<'a> SimpleInstrExecution<'a> {
@@ -360,7 +360,7 @@ struct ComplexInstrExecution<'a> {
     state: &'a ComplexInstrExecState,
     phase: &'a Phase,
     new_mode: Mode,
-    input: &'a CpuInput,
+    input: &'a Input,
 }
 
 impl<'a> ComplexInstrExecution<'a> {
@@ -421,7 +421,7 @@ fn alu_addition(AluInput { x, y, carry_in }: &AluInput) -> AluOutput {
     let (sum, overflow2) = partial_sum.overflowing_add((*carry_in).into());
     AluOutput {
         result: sum,
-        flags: CpuFlags {
+        flags: Flags {
             z: sum == 0,
             n: false,
             h: (x & 0x0f) + (y & 0x0f) + u8::from(*carry_in) > 0x0f,
@@ -439,11 +439,11 @@ struct AluInput {
 #[derive(Clone)]
 struct AluOutput {
     result: u8,
-    flags: CpuFlags,
+    flags: Flags,
 }
 
 #[derive(Clone)]
-pub struct CpuInput {
+pub struct Input {
     data: Option<u8>,
 }
 
@@ -544,8 +544,8 @@ mod tests {
         cpu.test_simple_instr(
             &encode_ld_r_deref_hl(dest),
             &[
-                (CpuInput::with_data(None), Some(BusOp::Read(0x1234))),
-                (CpuInput::with_data(Some(data)), None),
+                (Input::with_data(None), Some(BusOp::Read(0x1234))),
+                (Input::with_data(Some(data)), None),
             ],
         );
         assert_eq!(*cpu.regs.reg(dest), data)
@@ -572,10 +572,10 @@ mod tests {
             &encode_ld_deref_hl_r(src),
             &[
                 (
-                    CpuInput::with_data(None),
+                    Input::with_data(None),
                     Some(BusOp::Write(cpu.regs.hl(), data)),
                 ),
-                (CpuInput::with_data(None), None),
+                (Input::with_data(None), None),
             ],
         );
     }
@@ -612,8 +612,8 @@ mod tests {
         cpu.test_simple_instr(
             opcode,
             &[
-                (CpuInput::with_data(None), Some(BusOp::Read(cpu.regs.hl()))),
-                (CpuInput::with_data(Some(test_case.input.y)), None),
+                (Input::with_data(None), Some(BusOp::Read(cpu.regs.hl()))),
+                (Input::with_data(Some(test_case.input.y)), None),
             ],
         );
         assert_eq!(cpu.regs.a, test_case.expected.result);
@@ -667,11 +667,11 @@ mod tests {
         }
     }
 
-    macro_rules! cpu_flags {
+    macro_rules! flags {
         ($($flag:ident),*) => {
-            CpuFlags {
+            Flags {
                 $($flag: true,)*
-                ..CpuFlags {
+                ..Flags {
                     z: false,
                     n: false,
                     h: false,
@@ -690,7 +690,7 @@ mod tests {
             },
             expected: AluOutput {
                 result: 0x10,
-                flags: cpu_flags!(h),
+                flags: flags!(h),
             },
         },
         AluTestCase {
@@ -701,7 +701,7 @@ mod tests {
             },
             expected: AluOutput {
                 result: 0x00,
-                flags: cpu_flags!(z, cy),
+                flags: flags!(z, cy),
             },
         },
         AluTestCase {
@@ -712,7 +712,7 @@ mod tests {
             },
             expected: AluOutput {
                 result: 0x46,
-                flags: cpu_flags!(),
+                flags: flags!(),
             },
         },
         AluTestCase {
@@ -723,7 +723,7 @@ mod tests {
             },
             expected: AluOutput {
                 result: 0x10,
-                flags: cpu_flags!(h),
+                flags: flags!(h),
             },
         },
         AluTestCase {
@@ -734,7 +734,7 @@ mod tests {
             },
             expected: AluOutput {
                 result: 0xe0,
-                flags: cpu_flags!(cy),
+                flags: flags!(cy),
             },
         },
         AluTestCase {
@@ -745,7 +745,7 @@ mod tests {
             },
             expected: AluOutput {
                 result: 0x00,
-                flags: cpu_flags!(z, cy),
+                flags: flags!(z, cy),
             },
         },
         AluTestCase {
@@ -756,7 +756,7 @@ mod tests {
             },
             expected: AluOutput {
                 result: 0x00,
-                flags: cpu_flags!(z, h, cy),
+                flags: flags!(z, h, cy),
             },
         },
     ];
@@ -768,15 +768,15 @@ mod tests {
         cpu.test_opcode(
             &[0xc9],
             &[
-                (CpuInput::with_data(None), Some(BusOp::Read(0x1234))),
-                (CpuInput::with_data(Some(0x78)), None),
-                (CpuInput::with_data(None), Some(BusOp::Read(0x1235))),
-                (CpuInput::with_data(Some(0x56)), None),
+                (Input::with_data(None), Some(BusOp::Read(0x1234))),
+                (Input::with_data(Some(0x78)), None),
+                (Input::with_data(None), Some(BusOp::Read(0x1235))),
+                (Input::with_data(Some(0x56)), None),
                 // M3 doesn't do any bus operation (according to LIJI32 and gekkio)
-                (CpuInput::with_data(None), None),
-                (CpuInput::with_data(None), None),
-                (CpuInput::with_data(None), Some(BusOp::Read(0x5678))),
-                (CpuInput::with_data(Some(0x00)), None),
+                (Input::with_data(None), None),
+                (Input::with_data(None), None),
+                (Input::with_data(None), Some(BusOp::Read(0x5678))),
+                (Input::with_data(Some(0x00)), None),
             ],
         );
         assert_eq!(cpu.regs.sp, 0x1236)
@@ -785,17 +785,17 @@ mod tests {
     impl Cpu {
         fn test_simple_instr<'a, I>(&mut self, opcode: &[u8], steps: I)
         where
-            I: IntoIterator<Item = &'a (CpuInput, CpuOutput)>,
+            I: IntoIterator<Item = &'a (Input, CpuOutput)>,
         {
             let steps: Vec<_> = steps
                 .into_iter()
                 .cloned()
                 .chain(vec![
                     (
-                        CpuInput::with_data(None),
+                        Input::with_data(None),
                         Some(BusOp::Read(self.regs.pc + opcode.len() as u16)),
                     ),
-                    (CpuInput::with_data(Some(0x00)), None),
+                    (Input::with_data(Some(0x00)), None),
                 ])
                 .collect();
             self.test_opcode(opcode, &steps);
@@ -803,15 +803,15 @@ mod tests {
 
         fn test_opcode<'a, I>(&mut self, opcode: &[u8], steps: I)
         where
-            I: IntoIterator<Item = &'a (CpuInput, CpuOutput)>,
+            I: IntoIterator<Item = &'a (Input, CpuOutput)>,
         {
             let pc = self.regs.pc;
             for (i, byte) in opcode.iter().enumerate() {
                 assert_eq!(
-                    self.step(&CpuInput::with_data(None)),
+                    self.step(&Input::with_data(None)),
                     Some(BusOp::Read(pc + i as u16))
                 );
-                assert_eq!(self.step(&CpuInput::with_data(Some(*byte))), None);
+                assert_eq!(self.step(&Input::with_data(Some(*byte))), None);
             }
             for (input, output) in steps {
                 assert_eq!(self.step(input), *output)
@@ -819,7 +819,7 @@ mod tests {
         }
     }
 
-    impl CpuInput {
+    impl Input {
         fn with_data(data: Option<u8>) -> Self {
             Self { data }
         }
