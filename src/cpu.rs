@@ -1,9 +1,5 @@
 use self::{MCycle::*, Phase::*};
 
-fn main() {
-    println!("Hello, world!");
-}
-
 pub struct Cpu {
     regs: Regs,
     mode: Mode,
