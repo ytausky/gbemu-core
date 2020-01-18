@@ -442,6 +442,7 @@ struct AluOutput {
     flags: CpuFlags,
 }
 
+#[derive(Clone)]
 pub struct CpuInput {
     data: Option<u8>,
 }
@@ -481,7 +482,7 @@ enum Phase {
 
 type CpuOutput = Option<BusOp>;
 
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum BusOp {
     Read(u16),
     Write(u16, u8),
@@ -506,13 +507,7 @@ mod tests {
         let mut cpu = Cpu::default();
         let data = 0x42;
         *cpu.regs.reg(src) = data;
-        cpu.test_opcode(
-            &encode_ld_r_r(dest, src),
-            &[
-                (CpuInput::with_data(None), Some(BusOp::Read(0x0001))),
-                (CpuInput::with_data(Some(0x00)), None),
-            ],
-        );
+        cpu.test_simple_instr(&encode_ld_r_r(dest, src), &[]);
         assert_eq!(*cpu.regs.reg(dest), data)
     }
 
@@ -546,13 +541,11 @@ mod tests {
         let data = 0x42;
         cpu.regs.h = 0x12;
         cpu.regs.l = 0x34;
-        cpu.test_opcode(
+        cpu.test_simple_instr(
             &encode_ld_r_deref_hl(dest),
             &[
                 (CpuInput::with_data(None), Some(BusOp::Read(0x1234))),
                 (CpuInput::with_data(Some(data)), None),
-                (CpuInput::with_data(None), Some(BusOp::Read(0x0001))),
-                (CpuInput::with_data(Some(0x00)), None),
             ],
         );
         assert_eq!(*cpu.regs.reg(dest), data)
@@ -575,7 +568,7 @@ mod tests {
         cpu.regs.h = 0x12;
         cpu.regs.l = 0x34;
         *cpu.regs.reg(src) = data;
-        cpu.test_opcode(
+        cpu.test_simple_instr(
             &encode_ld_deref_hl_r(src),
             &[
                 (
@@ -583,8 +576,6 @@ mod tests {
                     Some(BusOp::Write(cpu.regs.hl(), data)),
                 ),
                 (CpuInput::with_data(None), None),
-                (CpuInput::with_data(None), Some(BusOp::Read(0x0001))),
-                (CpuInput::with_data(Some(0x00)), None),
             ],
         );
     }
@@ -618,13 +609,11 @@ mod tests {
         cpu.regs.f.cy = test_case.input.carry_in;
         cpu.regs.h = 0x12;
         cpu.regs.l = 0x34;
-        cpu.test_opcode(
+        cpu.test_simple_instr(
             opcode,
             &[
                 (CpuInput::with_data(None), Some(BusOp::Read(cpu.regs.hl()))),
                 (CpuInput::with_data(Some(test_case.input.y)), None),
-                (CpuInput::with_data(None), Some(BusOp::Read(0x0001))),
-                (CpuInput::with_data(Some(0x00)), None),
             ],
         );
         assert_eq!(cpu.regs.a, test_case.expected.result);
@@ -662,13 +651,7 @@ mod tests {
         cpu.regs.a = test_case.input.x;
         *cpu.regs.reg(r) = test_case.input.y;
         cpu.regs.f.cy = test_case.input.carry_in;
-        cpu.test_opcode(
-            &encoder(r),
-            &[
-                (CpuInput::with_data(None), Some(BusOp::Read(0x0001))),
-                (CpuInput::with_data(Some(0x00)), None),
-            ],
-        );
+        cpu.test_simple_instr(&encoder(r), &[]);
         assert_eq!(cpu.regs.a, test_case.expected.result);
         assert_eq!(cpu.regs.f, test_case.expected.flags)
     }
@@ -800,11 +783,28 @@ mod tests {
     }
 
     impl Cpu {
-        fn test_opcode<'a>(
-            &mut self,
-            opcode: &[u8],
-            steps: impl IntoIterator<Item = &'a (CpuInput, CpuOutput)>,
-        ) {
+        fn test_simple_instr<'a, I>(&mut self, opcode: &[u8], steps: I)
+        where
+            I: IntoIterator<Item = &'a (CpuInput, CpuOutput)>,
+        {
+            let steps: Vec<_> = steps
+                .into_iter()
+                .cloned()
+                .chain(vec![
+                    (
+                        CpuInput::with_data(None),
+                        Some(BusOp::Read(self.regs.pc + opcode.len() as u16)),
+                    ),
+                    (CpuInput::with_data(Some(0x00)), None),
+                ])
+                .collect();
+            self.test_opcode(opcode, &steps);
+        }
+
+        fn test_opcode<'a, I>(&mut self, opcode: &[u8], steps: I)
+        where
+            I: IntoIterator<Item = &'a (CpuInput, CpuOutput)>,
+        {
             let pc = self.regs.pc;
             for (i, byte) in opcode.iter().enumerate() {
                 assert_eq!(
