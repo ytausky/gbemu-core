@@ -203,3 +203,27 @@ fn sub_d() {
 fn encode_sub_r(r: R) -> Vec<u8> {
     vec![0b10_010_000 | r.code()]
 }
+
+#[test]
+fn sbc_a() {
+    let mut cpu = Cpu::default();
+    cpu.regs.a = 0x07;
+    cpu.test_simple_instr(&encode_sbc_r(R::A), &[]);
+    assert_eq!(cpu.regs.a, 0);
+    assert_eq!(cpu.regs.f, flags!(z, n))
+}
+
+#[test]
+fn sbc_b() {
+    let mut cpu = Cpu::default();
+    cpu.regs.a = 0x07;
+    cpu.regs.b = 0x07;
+    cpu.regs.f.cy = true;
+    cpu.test_simple_instr(&encode_sbc_r(R::B), &[]);
+    assert_eq!(cpu.regs.a, 0xff);
+    assert_eq!(cpu.regs.f, flags!(n, h, cy))
+}
+
+fn encode_sbc_r(r: R) -> Vec<u8> {
+    vec![0b10_011_000 | r.code()]
+}

@@ -93,6 +93,7 @@ enum Op {
     Add,
     Adc,
     Sub,
+    Sbc,
 }
 
 #[derive(Clone, Copy)]
@@ -133,6 +134,11 @@ impl Opcode {
             (0b10, 0b010, src) => Some(DecodedOpcode::Simple(SimpleInstr {
                 src: Src::Common(src.into()),
                 op: Op::Sub,
+                dest: Some(CommonOperand::Reg(R::A)),
+            })),
+            (0b10, 0b011, src) => Some(DecodedOpcode::Simple(SimpleInstr {
+                src: Src::Common(src.into()),
+                op: Op::Sbc,
                 dest: Some(CommonOperand::Reg(R::A)),
             })),
             _ => Some(DecodedOpcode::Complex(self)),
@@ -340,6 +346,11 @@ impl<'a> SimpleInstrExecution<'a> {
                 x: self.regs.a,
                 y: operand,
                 carry_in: false,
+            }),
+            Op::Sbc => alu_subtraction(&AluInput {
+                x: self.regs.a,
+                y: operand,
+                carry_in: self.regs.f.cy,
             }),
         };
         self.state.step = MicroStep::Write(output);
