@@ -1,5 +1,20 @@
 use self::{MCycle::*, Phase::*};
 
+#[cfg(test)]
+macro_rules! flags {
+    ($($flag:ident),*) => {
+        Flags {
+            $($flag: true,)*
+            ..Flags {
+                z: false,
+                n: false,
+                h: false,
+                cy: false,
+            }
+        }
+    };
+}
+
 mod alu;
 
 #[cfg(test)]

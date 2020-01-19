@@ -1,19 +1,5 @@
 use super::*;
 
-macro_rules! flags {
-    ($($flag:ident),*) => {
-        Flags {
-            $($flag: true,)*
-            ..Flags {
-                z: false,
-                n: false,
-                h: false,
-                cy: false,
-            }
-        }
-    };
-}
-
 mod alu;
 mod ld;
 
