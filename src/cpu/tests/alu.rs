@@ -330,3 +330,44 @@ fn or_d() {
 fn encode_or_r(r: R) -> Vec<u8> {
     vec![0b10_110_000 | r.code()]
 }
+
+#[test]
+fn cp_a() {
+    let mut cpu = Cpu::default();
+    cpu.regs.a = 0x07;
+    cpu.test_simple_instr(&encode_cp_r(R::A), &[]);
+    assert_eq!(cpu.regs.a, 0x07);
+    assert_eq!(cpu.regs.f, flags!(z, n))
+}
+
+#[test]
+fn cp_b() {
+    let mut cpu = Cpu::default();
+    cpu.regs.b = 0x01;
+    cpu.test_simple_instr(&encode_cp_r(R::B), &[]);
+    assert_eq!(cpu.regs.a, 0x00);
+    assert_eq!(cpu.regs.f, flags!(n, h, cy))
+}
+
+#[test]
+fn cp_c() {
+    let mut cpu = Cpu::default();
+    cpu.regs.c = 0x10;
+    cpu.test_simple_instr(&encode_cp_r(R::C), &[]);
+    assert_eq!(cpu.regs.a, 0x00);
+    assert_eq!(cpu.regs.f, flags!(n, cy))
+}
+
+#[test]
+fn cp_d() {
+    let mut cpu = Cpu::default();
+    cpu.regs.a = 0x10;
+    cpu.regs.d = 0x01;
+    cpu.test_simple_instr(&encode_cp_r(R::D), &[]);
+    assert_eq!(cpu.regs.a, 0x10);
+    assert_eq!(cpu.regs.f, flags!(n, h))
+}
+
+fn encode_cp_r(r: R) -> Vec<u8> {
+    vec![0b10_111_000 | r.code()]
+}

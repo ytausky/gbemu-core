@@ -119,6 +119,7 @@ enum AluOp {
     And,
     Xor,
     Or,
+    Cp,
 }
 
 impl From<u8> for AluOp {
@@ -131,6 +132,7 @@ impl From<u8> for AluOp {
             0b100 => Self::And,
             0b101 => Self::Xor,
             0b110 => Self::Or,
+            0b111 => Self::Cp,
             _ => panic!(),
         }
     }
@@ -362,6 +364,10 @@ impl<'a> SimpleInstrExecution<'a> {
             Op::Alu(AluOp::And) => alu::and(self.regs.a, operand),
             Op::Alu(AluOp::Xor) => alu::xor(self.regs.a, operand),
             Op::Alu(AluOp::Or) => alu::or(self.regs.a, operand),
+            Op::Alu(AluOp::Cp) => {
+                let (_, flags) = alu::sub(self.regs.a, operand, false);
+                (self.regs.a, flags)
+            }
         };
         self.state.step = MicroStep::Write(result, flags);
         None
