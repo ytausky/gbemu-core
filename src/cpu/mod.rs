@@ -1,5 +1,7 @@
 use self::{MCycle::*, Phase::*};
 
+mod alu;
+
 #[cfg(test)]
 mod tests;
 
@@ -123,7 +125,7 @@ enum CommonOperand {
 enum MicroStep {
     Read,
     Action(u8),
-    Write(AluOutput),
+    Write(u8, Flags),
     Fetch,
 }
 
@@ -286,9 +288,10 @@ impl<'a> SimpleInstrExecution<'a> {
                     let operand = *operand;
                     self.act(operand)
                 }
-                MicroStep::Write(result) => {
-                    let result = result.clone();
-                    self.write(result)
+                MicroStep::Write(result, flags) => {
+                    let result = *result;
+                    let flags = flags.clone();
+                    self.write(result, flags)
                 }
                 MicroStep::Fetch => match self.phase {
                     Tick => Some(Some(BusOp::Read(self.regs.pc))),
@@ -329,52 +332,18 @@ impl<'a> SimpleInstrExecution<'a> {
     }
 
     fn act(&mut self, operand: u8) -> Option<CpuOutput> {
-        let output = match self.state.instr.op {
-            Op::Ld => AluOutput {
-                result: operand,
-                flags: self.regs.f.clone(),
-            },
-            Op::Alu(AluOp::Add) => self.add(operand, false),
-            Op::Alu(AluOp::Adc) => self.add(operand, self.regs.f.cy),
-            Op::Alu(AluOp::Sub) => self.sub(operand, false),
-            Op::Alu(AluOp::Sbc) => self.sub(operand, self.regs.f.cy),
+        let (result, flags) = match self.state.instr.op {
+            Op::Ld => (operand, self.regs.f.clone()),
+            Op::Alu(AluOp::Add) => alu::add(self.regs.a, operand, false),
+            Op::Alu(AluOp::Adc) => alu::add(self.regs.a, operand, self.regs.f.cy),
+            Op::Alu(AluOp::Sub) => alu::sub(self.regs.a, operand, false),
+            Op::Alu(AluOp::Sbc) => alu::sub(self.regs.a, operand, self.regs.f.cy),
         };
-        self.state.step = MicroStep::Write(output);
+        self.state.step = MicroStep::Write(result, flags);
         None
     }
 
-    fn add(&self, rhs: u8, carry_in: bool) -> AluOutput {
-        let lhs = self.regs.a;
-        let (partial_sum, overflow1) = lhs.overflowing_add(rhs);
-        let (sum, overflow2) = partial_sum.overflowing_add(carry_in.into());
-        AluOutput {
-            result: sum,
-            flags: Flags {
-                z: sum == 0,
-                n: false,
-                h: (lhs & 0x0f) + (rhs & 0x0f) + u8::from(carry_in) > 0x0f,
-                cy: overflow1 | overflow2,
-            },
-        }
-    }
-
-    fn sub(&self, rhs: u8, carry_in: bool) -> AluOutput {
-        let lhs = self.regs.a;
-        let carry_in = u8::from(carry_in);
-        let (partial_diff, overflow1) = lhs.overflowing_sub(rhs);
-        let (diff, overflow2) = partial_diff.overflowing_sub(carry_in);
-        AluOutput {
-            result: diff,
-            flags: Flags {
-                z: diff == 0,
-                n: true,
-                h: (lhs & 0x0f).wrapping_sub(rhs & 0x0f).wrapping_sub(carry_in) > 0x0f,
-                cy: overflow1 | overflow2,
-            },
-        }
-    }
-
-    fn write(&mut self, AluOutput { result, flags }: AluOutput) -> Option<CpuOutput> {
+    fn write(&mut self, result: u8, flags: Flags) -> Option<CpuOutput> {
         self.regs.f = flags;
         self.state.instr.dest.and_then(|dest| match dest {
             CommonOperand::Reg(r) => {
