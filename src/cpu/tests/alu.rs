@@ -289,3 +289,44 @@ fn xor_b() {
 fn encode_xor_r(r: R) -> Vec<u8> {
     vec![0b10_101_000 | r.code()]
 }
+
+#[test]
+fn or_a() {
+    let mut cpu = Cpu::default();
+    cpu.regs.a = 0x55;
+    cpu.test_simple_instr(&encode_or_r(R::A), &[]);
+    assert_eq!(cpu.regs.a, 0x55);
+    assert_eq!(cpu.regs.f, flags!())
+}
+
+#[test]
+fn or_b() {
+    let mut cpu = Cpu::default();
+    cpu.regs.a = 0x05;
+    cpu.regs.b = 0x55;
+    cpu.test_simple_instr(&encode_or_r(R::B), &[]);
+    assert_eq!(cpu.regs.a, 0x55);
+    assert_eq!(cpu.regs.f, flags!())
+}
+
+#[test]
+fn or_c() {
+    let mut cpu = Cpu::default();
+    cpu.regs.a = 0x05;
+    cpu.regs.c = 0x54;
+    cpu.test_simple_instr(&encode_or_r(R::C), &[]);
+    assert_eq!(cpu.regs.a, 0x55);
+    assert_eq!(cpu.regs.f, flags!())
+}
+
+#[test]
+fn or_d() {
+    let mut cpu = Cpu::default();
+    cpu.test_simple_instr(&encode_or_r(R::D), &[]);
+    assert_eq!(cpu.regs.a, 0x00);
+    assert_eq!(cpu.regs.f, flags!(z))
+}
+
+fn encode_or_r(r: R) -> Vec<u8> {
+    vec![0b10_110_000 | r.code()]
+}

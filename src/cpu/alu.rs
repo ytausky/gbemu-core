@@ -52,6 +52,17 @@ pub fn xor(lhs: u8, rhs: u8) -> (u8, Flags) {
     )
 }
 
+pub fn or(lhs: u8, rhs: u8) -> (u8, Flags) {
+    let result = lhs | rhs;
+    (
+        result,
+        Flags {
+            z: result == 0,
+            ..Default::default()
+        },
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
