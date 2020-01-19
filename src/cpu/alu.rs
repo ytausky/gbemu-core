@@ -29,6 +29,18 @@ pub fn sub(lhs: u8, rhs: u8, carry_in: bool) -> (u8, Flags) {
     )
 }
 
+pub fn and(lhs: u8, rhs: u8) -> (u8, Flags) {
+    let result = lhs & rhs;
+    (
+        result,
+        Flags {
+            z: result == 0,
+            h: true,
+            ..Default::default()
+        },
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

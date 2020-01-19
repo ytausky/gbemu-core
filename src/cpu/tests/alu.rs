@@ -233,3 +233,36 @@ fn sbc_b() {
 fn encode_sbc_r(r: R) -> Vec<u8> {
     vec![0b10_011_000 | r.code()]
 }
+
+#[test]
+fn and_a() {
+    let mut cpu = Cpu::default();
+    cpu.regs.a = 0x42;
+    cpu.test_simple_instr(&encode_and_r(R::A), &[]);
+    assert_eq!(cpu.regs.a, 0x42);
+    assert_eq!(cpu.regs.f, flags!(h))
+}
+
+#[test]
+fn and_b() {
+    let mut cpu = Cpu::default();
+    cpu.regs.a = 0x0f;
+    cpu.regs.b = 0x55;
+    cpu.test_simple_instr(&encode_and_r(R::B), &[]);
+    assert_eq!(cpu.regs.a, 0x05);
+    assert_eq!(cpu.regs.f, flags!(h))
+}
+
+#[test]
+fn and_c() {
+    let mut cpu = Cpu::default();
+    cpu.regs.a = 0x0f;
+    cpu.regs.b = 0xf0;
+    cpu.test_simple_instr(&encode_and_r(R::C), &[]);
+    assert_eq!(cpu.regs.a, 0x00);
+    assert_eq!(cpu.regs.f, flags!(z, h))
+}
+
+fn encode_and_r(r: R) -> Vec<u8> {
+    vec![0b10_100_000 | r.code()]
+}
