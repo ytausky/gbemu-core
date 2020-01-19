@@ -77,6 +77,12 @@ struct AluTestCase {
     expected: AluOutput,
 }
 
+struct AluInput {
+    x: u8,
+    y: u8,
+    carry_in: bool,
+}
+
 impl AluTestCase {
     fn is_applicable_for_a(&self) -> bool {
         self.input.x == self.input.y

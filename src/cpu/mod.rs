@@ -89,11 +89,28 @@ enum Src {
 
 #[derive(Clone)]
 enum Op {
+    Alu(AluOp),
     Ld,
+}
+
+#[derive(Clone)]
+enum AluOp {
     Add,
     Adc,
     Sub,
     Sbc,
+}
+
+impl From<u8> for AluOp {
+    fn from(encoding: u8) -> Self {
+        match encoding {
+            0b000 => Self::Add,
+            0b001 => Self::Adc,
+            0b010 => Self::Sub,
+            0b011 => Self::Sbc,
+            _ => panic!(),
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -121,24 +138,9 @@ impl Opcode {
                 op: Op::Ld,
                 dest: Some(dest.into()),
             })),
-            (0b10, 0b000, src) => Some(DecodedOpcode::Simple(SimpleInstr {
-                src: Src::Common(src.into()),
-                op: Op::Add,
-                dest: Some(CommonOperand::Reg(R::A)),
-            })),
-            (0b10, 0b001, src) => Some(DecodedOpcode::Simple(SimpleInstr {
-                src: Src::Common(src.into()),
-                op: Op::Adc,
-                dest: Some(CommonOperand::Reg(R::A)),
-            })),
-            (0b10, 0b010, src) => Some(DecodedOpcode::Simple(SimpleInstr {
-                src: Src::Common(src.into()),
-                op: Op::Sub,
-                dest: Some(CommonOperand::Reg(R::A)),
-            })),
-            (0b10, 0b011, src) => Some(DecodedOpcode::Simple(SimpleInstr {
-                src: Src::Common(src.into()),
-                op: Op::Sbc,
+            (0b10, op, rhs) => Some(DecodedOpcode::Simple(SimpleInstr {
+                src: Src::Common(rhs.into()),
+                op: Op::Alu(op.into()),
                 dest: Some(CommonOperand::Reg(R::A)),
             })),
             _ => Some(DecodedOpcode::Complex(self)),
@@ -332,51 +334,62 @@ impl<'a> SimpleInstrExecution<'a> {
                 result: operand,
                 flags: self.regs.f.clone(),
             },
-            Op::Add => alu_addition(&AluInput {
-                x: self.regs.a,
-                y: operand,
-                carry_in: false,
-            }),
-            Op::Adc => alu_addition(&AluInput {
-                x: self.regs.a,
-                y: operand,
-                carry_in: self.regs.f.cy,
-            }),
-            Op::Sub => alu_subtraction(&AluInput {
-                x: self.regs.a,
-                y: operand,
-                carry_in: false,
-            }),
-            Op::Sbc => alu_subtraction(&AluInput {
-                x: self.regs.a,
-                y: operand,
-                carry_in: self.regs.f.cy,
-            }),
+            Op::Alu(AluOp::Add) => self.add(operand, false),
+            Op::Alu(AluOp::Adc) => self.add(operand, self.regs.f.cy),
+            Op::Alu(AluOp::Sub) => self.sub(operand, false),
+            Op::Alu(AluOp::Sbc) => self.sub(operand, self.regs.f.cy),
         };
         self.state.step = MicroStep::Write(output);
         None
     }
 
-    fn write(&mut self, output: AluOutput) -> Option<CpuOutput> {
-        self.regs.f = output.flags;
-        if let Some(dest) = self.state.instr.dest {
-            match dest {
-                CommonOperand::Reg(r) => {
-                    *self.regs.reg(r) = output.result;
-                    self.state.step = MicroStep::Fetch;
-                    None
-                }
-                CommonOperand::DerefHl => match self.phase {
-                    Tick => Some(Some(BusOp::Write(self.regs.hl(), output.result))),
-                    Tock => {
-                        self.state.step = MicroStep::Fetch;
-                        Some(None)
-                    }
-                },
-            }
-        } else {
-            None
+    fn add(&self, rhs: u8, carry_in: bool) -> AluOutput {
+        let lhs = self.regs.a;
+        let (partial_sum, overflow1) = lhs.overflowing_add(rhs);
+        let (sum, overflow2) = partial_sum.overflowing_add(carry_in.into());
+        AluOutput {
+            result: sum,
+            flags: Flags {
+                z: sum == 0,
+                n: false,
+                h: (lhs & 0x0f) + (rhs & 0x0f) + u8::from(carry_in) > 0x0f,
+                cy: overflow1 | overflow2,
+            },
         }
+    }
+
+    fn sub(&self, rhs: u8, carry_in: bool) -> AluOutput {
+        let lhs = self.regs.a;
+        let carry_in = u8::from(carry_in);
+        let (partial_diff, overflow1) = lhs.overflowing_sub(rhs);
+        let (diff, overflow2) = partial_diff.overflowing_sub(carry_in);
+        AluOutput {
+            result: diff,
+            flags: Flags {
+                z: diff == 0,
+                n: true,
+                h: (lhs & 0x0f).wrapping_sub(rhs & 0x0f).wrapping_sub(carry_in) > 0x0f,
+                cy: overflow1 | overflow2,
+            },
+        }
+    }
+
+    fn write(&mut self, AluOutput { result, flags }: AluOutput) -> Option<CpuOutput> {
+        self.regs.f = flags;
+        self.state.instr.dest.and_then(|dest| match dest {
+            CommonOperand::Reg(r) => {
+                *self.regs.reg(r) = result;
+                self.state.step = MicroStep::Fetch;
+                None
+            }
+            CommonOperand::DerefHl => match self.phase {
+                Tick => Some(Some(BusOp::Write(self.regs.hl(), result))),
+                Tock => {
+                    self.state.step = MicroStep::Fetch;
+                    Some(None)
+                }
+            },
+        })
     }
 }
 
@@ -439,43 +452,6 @@ impl<'a> ComplexInstrExecution<'a> {
             }
         }
     }
-}
-
-fn alu_addition(AluInput { x, y, carry_in }: &AluInput) -> AluOutput {
-    let (partial_sum, overflow1) = x.overflowing_add(*y);
-    let (sum, overflow2) = partial_sum.overflowing_add((*carry_in).into());
-    AluOutput {
-        result: sum,
-        flags: Flags {
-            z: sum == 0,
-            n: false,
-            h: (x & 0x0f) + (y & 0x0f) + u8::from(*carry_in) > 0x0f,
-            cy: overflow1 | overflow2,
-        },
-    }
-}
-
-fn alu_subtraction(AluInput { x, y, carry_in }: &AluInput) -> AluOutput {
-    let (partial_diff, overflow1) = x.overflowing_sub(*y);
-    let (diff, overflow2) = partial_diff.overflowing_sub((*carry_in).into());
-    AluOutput {
-        result: diff,
-        flags: Flags {
-            z: diff == 0,
-            n: true,
-            h: (x & 0x0f)
-                .wrapping_sub(y & 0x0f)
-                .wrapping_sub((*carry_in).into())
-                > 0x0f,
-            cy: overflow1 | overflow2,
-        },
-    }
-}
-
-struct AluInput {
-    x: u8,
-    y: u8,
-    carry_in: bool,
 }
 
 #[derive(Clone)]
