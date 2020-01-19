@@ -162,3 +162,44 @@ const ADDITION_TEST_CASES: &[AluTestCase] = &[
         },
     },
 ];
+
+#[test]
+fn sub_a() {
+    let mut cpu = Cpu::default();
+    cpu.regs.a = 0x07;
+    cpu.test_simple_instr(&encode_sub_r(R::A), &[]);
+    assert_eq!(cpu.regs.a, 0);
+    assert_eq!(cpu.regs.f, flags!(z, n))
+}
+
+#[test]
+fn sub_b() {
+    let mut cpu = Cpu::default();
+    cpu.regs.b = 0x01;
+    cpu.test_simple_instr(&encode_sub_r(R::B), &[]);
+    assert_eq!(cpu.regs.a, 0xff);
+    assert_eq!(cpu.regs.f, flags!(n, h, cy))
+}
+
+#[test]
+fn sub_c() {
+    let mut cpu = Cpu::default();
+    cpu.regs.c = 0x10;
+    cpu.test_simple_instr(&encode_sub_r(R::C), &[]);
+    assert_eq!(cpu.regs.a, 0xf0);
+    assert_eq!(cpu.regs.f, flags!(n, cy))
+}
+
+#[test]
+fn sub_d() {
+    let mut cpu = Cpu::default();
+    cpu.regs.a = 0x10;
+    cpu.regs.d = 0x01;
+    cpu.test_simple_instr(&encode_sub_r(R::D), &[]);
+    assert_eq!(cpu.regs.a, 0x0f);
+    assert_eq!(cpu.regs.f, flags!(n, h))
+}
+
+fn encode_sub_r(r: R) -> Vec<u8> {
+    vec![0b10_010_000 | r.code()]
+}

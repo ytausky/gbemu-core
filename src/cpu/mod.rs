@@ -92,6 +92,7 @@ enum Op {
     Ld,
     Add,
     Adc,
+    Sub,
 }
 
 #[derive(Clone, Copy)]
@@ -127,6 +128,11 @@ impl Opcode {
             (0b10, 0b001, src) => Some(DecodedOpcode::Simple(SimpleInstr {
                 src: Src::Common(src.into()),
                 op: Op::Adc,
+                dest: Some(CommonOperand::Reg(R::A)),
+            })),
+            (0b10, 0b010, src) => Some(DecodedOpcode::Simple(SimpleInstr {
+                src: Src::Common(src.into()),
+                op: Op::Sub,
                 dest: Some(CommonOperand::Reg(R::A)),
             })),
             _ => Some(DecodedOpcode::Complex(self)),
@@ -330,6 +336,11 @@ impl<'a> SimpleInstrExecution<'a> {
                 y: operand,
                 carry_in: self.regs.f.cy,
             }),
+            Op::Sub => alu_subtraction(&AluInput {
+                x: self.regs.a,
+                y: operand,
+                carry_in: false,
+            }),
         };
         self.state.step = MicroStep::Write(output);
         None
@@ -428,6 +439,23 @@ fn alu_addition(AluInput { x, y, carry_in }: &AluInput) -> AluOutput {
             z: sum == 0,
             n: false,
             h: (x & 0x0f) + (y & 0x0f) + u8::from(*carry_in) > 0x0f,
+            cy: overflow1 | overflow2,
+        },
+    }
+}
+
+fn alu_subtraction(AluInput { x, y, carry_in }: &AluInput) -> AluOutput {
+    let (partial_diff, overflow1) = x.overflowing_sub(*y);
+    let (diff, overflow2) = partial_diff.overflowing_sub((*carry_in).into());
+    AluOutput {
+        result: diff,
+        flags: Flags {
+            z: diff == 0,
+            n: true,
+            h: (x & 0x0f)
+                .wrapping_sub(y & 0x0f)
+                .wrapping_sub((*carry_in).into())
+                > 0x0f,
             cy: overflow1 | overflow2,
         },
     }
