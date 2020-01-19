@@ -266,3 +266,26 @@ fn and_c() {
 fn encode_and_r(r: R) -> Vec<u8> {
     vec![0b10_100_000 | r.code()]
 }
+
+#[test]
+fn xor_a() {
+    let mut cpu = Cpu::default();
+    cpu.regs.a = 0x42;
+    cpu.test_simple_instr(&encode_xor_r(R::A), &[]);
+    assert_eq!(cpu.regs.a, 0x00);
+    assert_eq!(cpu.regs.f, flags!(z))
+}
+
+#[test]
+fn xor_b() {
+    let mut cpu = Cpu::default();
+    cpu.regs.a = 0x55;
+    cpu.regs.b = 0xaa;
+    cpu.test_simple_instr(&encode_xor_r(R::B), &[]);
+    assert_eq!(cpu.regs.a, 0xff);
+    assert_eq!(cpu.regs.f, flags!())
+}
+
+fn encode_xor_r(r: R) -> Vec<u8> {
+    vec![0b10_101_000 | r.code()]
+}
