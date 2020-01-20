@@ -102,6 +102,7 @@ struct SimpleInstr {
 #[derive(Clone)]
 enum Src {
     Common(CommonOperand),
+    Immediate,
 }
 
 #[derive(Clone)]
@@ -165,6 +166,11 @@ impl Opcode {
             })),
             (0b10, op, rhs) => Some(DecodedOpcode::Simple(SimpleInstr {
                 src: Src::Common(rhs.into()),
+                op: Op::Alu(op.into()),
+                dest: Some(CommonOperand::Reg(R::A)),
+            })),
+            (0b11, op, 0b110) => Some(DecodedOpcode::Simple(SimpleInstr {
+                src: Src::Immediate,
                 op: Op::Alu(op.into()),
                 dest: Some(CommonOperand::Reg(R::A)),
             })),
@@ -351,6 +357,14 @@ impl<'a> SimpleInstrExecution<'a> {
                     Some(None)
                 }
             },
+            Src::Immediate => match self.phase {
+                Tick => Some(Some(BusOp::Read(self.regs.pc))),
+                Tock => {
+                    self.regs.pc += 1;
+                    self.state.step = MicroStep::Action(self.input.data.unwrap());
+                    Some(None)
+                }
+            }
         }
     }
 

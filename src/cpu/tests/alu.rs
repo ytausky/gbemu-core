@@ -211,6 +211,15 @@ fn encode_sub_r(r: R) -> Vec<u8> {
 }
 
 #[test]
+fn sub_n() {
+    let mut cpu = Cpu::default();
+    cpu.regs.a = 0x07;
+    cpu.test_simple_instr(&[0b11_010_110, 0x05], &[]);
+    assert_eq!(cpu.regs.a, 0x02);
+    assert_eq!(cpu.regs.f, flags!(n))
+}
+
+#[test]
 fn sbc_a() {
     let mut cpu = Cpu::default();
     cpu.regs.a = 0x07;
