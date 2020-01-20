@@ -76,6 +76,7 @@ impl ExecuteState {
             DecodedOpcode::Complex(opcode) => ExecuteState::Complex(ComplexInstrExecState {
                 opcode,
                 m_cycle: M1,
+                data_buffer: 0xff,
             }),
         }
     }
@@ -84,6 +85,7 @@ impl ExecuteState {
 struct ComplexInstrExecState {
     opcode: Opcode,
     m_cycle: MCycle,
+    data_buffer: u8,
 }
 
 #[derive(Clone)]
@@ -183,7 +185,7 @@ impl Opcode {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 enum MCycle {
     M1,
     M2,
@@ -219,6 +221,7 @@ impl Default for ComplexInstrExecState {
         Self {
             opcode: Opcode(0x00),
             m_cycle: M1,
+            data_buffer: 0xff,
         }
     }
 }
@@ -289,12 +292,15 @@ impl<'a> RunModeCpu<'a> {
                         ComplexInstrExecState {
                             opcode: state.opcode,
                             m_cycle,
+                            data_buffer: state.data_buffer,
                         },
                     )))
                 },
                 state,
                 phase: self.phase,
                 input: self.input,
+                sweep_m_cycle: M1,
+                output: None,
             }
             .exec_instr(),
         }
@@ -364,7 +370,7 @@ impl<'a> SimpleInstrExecution<'a> {
                     self.state.step = MicroStep::Action(self.input.data.unwrap());
                     Some(None)
                 }
-            }
+            },
         }
     }
 
@@ -408,10 +414,12 @@ impl<'a> SimpleInstrExecution<'a> {
 
 struct ComplexInstrExecution<'a> {
     regs: &'a mut Regs,
-    state: &'a ComplexInstrExecState,
+    state: &'a mut ComplexInstrExecState,
     phase: &'a Phase,
     new_mode: Mode,
     input: &'a Input,
+    sweep_m_cycle: MCycle,
+    output: Option<CpuOutput>,
 }
 
 impl<'a> ComplexInstrExecution<'a> {
@@ -421,49 +429,120 @@ impl<'a> ComplexInstrExecution<'a> {
             (0b01, 0b110, 0b110) => self.halt(),
             (0b11, 0b001, 0b001) => self.ret(),
             _ => unimplemented!(),
-        };
+        }
+        .done();
         (self.new_mode, output)
     }
 
-    fn nop(&mut self) -> CpuOutput {
-        self.fetch()
+    fn nop(&mut self) -> &mut Self {
+        self.cycle(|cpu| cpu.fetch())
     }
 
-    fn halt(&mut self) -> CpuOutput {
+    fn halt(&mut self) -> &mut Self {
         unimplemented!()
     }
 
-    fn ret(&mut self) -> CpuOutput {
-        match (self.state.m_cycle, *self.phase) {
-            (M1, Tick) => Some(BusOp::Read(self.regs.sp)),
-            (M1, Tock) => {
-                self.regs.pc = self.input.data.unwrap().into();
-                self.regs.sp += 1;
-                None
+    fn read_src(&mut self, src: Src) -> &mut Self {
+        self.cycle(|cpu| match src {
+            Src::Common(CommonOperand::Reg(r)) => {
+                cpu.0.state.data_buffer = *cpu.0.regs.reg(r);
+                cpu
             }
-            (M2, Tick) => Some(BusOp::Read(self.regs.sp)),
-            (M2, Tock) => {
-                self.regs.pc |= u16::from(self.input.data.unwrap()) << 8;
-                self.regs.sp += 1;
-                None
-            }
-            (M3, _) => None,
-            (M4, _) => self.fetch(),
-            _ => unreachable!(),
-        }
+            Src::Common(CommonOperand::DerefHl) => cpu.read(cpu.0.regs.hl()),
+            Src::Immediate => cpu.read(cpu.0.regs.pc).increment_pc(),
+        })
     }
 
-    fn fetch(&mut self) -> CpuOutput {
-        match self.phase {
-            Phase::Tick => Some(BusOp::Read(self.regs.pc)),
-            Phase::Tock => {
-                self.regs.pc += 1;
-                self.new_mode = Mode::Run(Stage::Execute(ExecuteState::new(
-                    Opcode(self.input.data.unwrap()).decode().unwrap(),
-                )));
-                None
-            }
+    fn ret(&mut self) -> &mut Self {
+        self.cycle(|cpu| {
+            cpu.read(cpu.0.regs.sp)
+                .increment_sp()
+                .set_pc_low_from_data()
+        })
+        .cycle(|cpu| {
+            cpu.read(cpu.0.regs.sp)
+                .increment_sp()
+                .set_pc_high_from_data()
+        })
+        .cycle(|cpu| cpu.no_operation())
+        .cycle(|cpu| cpu.fetch())
+    }
+
+    fn cycle<
+        F: for<'r, 's> FnOnce(&'s mut DelayedOutput<'r, 'a>) -> &'s mut DelayedOutput<'r, 'a>,
+    >(
+        &mut self,
+        f: F,
+    ) -> &mut Self {
+        let output = if self.state.m_cycle == self.sweep_m_cycle {
+            let mut delayed_output = DelayedOutput(self, None);
+            f(&mut delayed_output);
+            Some(delayed_output.1.unwrap())
+        } else {
+            None
+        };
+        self.sweep_m_cycle = self.sweep_m_cycle.next();
+        self.output = self.output.take().or(output);
+        self
+    }
+
+    fn done(&mut self) -> CpuOutput {
+        self.output.take().unwrap()
+    }
+}
+
+struct DelayedOutput<'a, 'b: 'a>(&'a mut ComplexInstrExecution<'b>, Option<CpuOutput>);
+
+impl<'a, 'b: 'a> DelayedOutput<'a, 'b> {
+    fn increment_pc(&mut self) -> &mut Self {
+        self.on_tock(|cpu| cpu.regs.pc += 1)
+    }
+
+    fn increment_sp(&mut self) -> &mut Self {
+        self.on_tock(|cpu| cpu.regs.sp += 1)
+    }
+
+    fn set_pc_low_from_data(&mut self) -> &mut Self {
+        self.on_tock(|cpu| cpu.regs.pc = cpu.regs.pc & 0xff00 | u16::from(cpu.input.data.unwrap()))
+    }
+
+    fn set_pc_high_from_data(&mut self) -> &mut Self {
+        self.on_tock(|cpu| {
+            cpu.regs.pc = cpu.regs.pc & 0x00ff | (u16::from(cpu.input.data.unwrap()) << 8)
+        })
+    }
+
+    fn decode(&mut self) -> &mut Self {
+        self.on_tock(|cpu| {
+            cpu.new_mode = Mode::Run(Stage::Execute(ExecuteState::new(
+                Opcode(cpu.input.data.unwrap()).decode().unwrap(),
+            )))
+        })
+    }
+
+    fn no_operation(&mut self) -> &mut Self {
+        self.1 = Some(None);
+        self
+    }
+
+    fn fetch(&mut self) -> &mut Self {
+        self.read(self.0.regs.pc).increment_pc().decode()
+    }
+
+    fn read(&mut self, addr: u16) -> &mut Self {
+        let output = match self.0.phase {
+            Tick => Some(BusOp::Read(addr)),
+            Tock => None,
+        };
+        self.1 = Some(output);
+        self
+    }
+
+    fn on_tock(&mut self, f: impl FnOnce(&mut ComplexInstrExecution<'b>)) -> &mut Self {
+        if *self.0.phase == Tock {
+            f(self.0)
         }
+        self
     }
 }
 
@@ -505,7 +584,7 @@ impl From<u8> for CommonOperand {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 enum Phase {
     Tick,
     Tock,
