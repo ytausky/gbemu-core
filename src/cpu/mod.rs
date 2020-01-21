@@ -110,7 +110,6 @@ enum Src {
 #[derive(Clone)]
 enum Op {
     Alu(AluOp),
-    Ld,
 }
 
 #[derive(Clone)]
@@ -161,11 +160,6 @@ struct Opcode(u8);
 impl Opcode {
     fn decode(self) -> Option<DecodedOpcode> {
         match self.split() {
-            (0b01, dest, src) => Some(DecodedOpcode::Simple(SimpleInstr {
-                src: Src::Common(src.into()),
-                op: Op::Ld,
-                dest: Some(dest.into()),
-            })),
             (0b10, op, rhs) => Some(DecodedOpcode::Simple(SimpleInstr {
                 src: Src::Common(rhs.into()),
                 op: Op::Alu(op.into()),
@@ -185,7 +179,7 @@ impl Opcode {
     }
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum MCycle {
     M1,
     M2,
@@ -384,7 +378,6 @@ impl<'a> SimpleInstrExecution<'a> {
 
     fn act(&mut self, operand: u8) -> Option<CpuOutput> {
         let (result, flags) = match self.state.instr.op {
-            Op::Ld => (operand, self.regs.f.clone()),
             Op::Alu(AluOp::Add) => alu::add(self.regs.a, operand, false),
             Op::Alu(AluOp::Adc) => alu::add(self.regs.a, operand, self.regs.f.cy),
             Op::Alu(AluOp::Sub) => alu::sub(self.regs.a, operand, false),
@@ -435,6 +428,7 @@ impl<'a> ComplexInstrExecution<'a> {
         let output = match self.state.opcode.split() {
             (0b00, 0b000, 0b000) => self.nop(),
             (0b01, 0b110, 0b110) => self.halt(),
+            (0b01, dest, src) => self.ld(dest.into(), Src::Common(src.into())),
             (0b11, 0b001, 0b001) => self.ret(),
             _ => unimplemented!(),
         }
@@ -450,15 +444,31 @@ impl<'a> ComplexInstrExecution<'a> {
         unimplemented!()
     }
 
+    fn ld(&mut self, dest: CommonOperand, src: Src) -> &mut Self {
+        self.read_src(src).write_dest(dest).cycle(|cpu| cpu.fetch())
+    }
+
     fn read_src(&mut self, src: Src) -> &mut Self {
-        self.cycle(|cpu| match src {
-            Src::Common(CommonOperand::Reg(r)) => {
+        match src {
+            Src::Common(CommonOperand::Reg(r)) => self.micro_op(|cpu| {
                 cpu.0.state.data_buffer = *cpu.0.regs.reg(r);
                 cpu
+            }),
+            Src::Common(CommonOperand::DerefHl) => self.cycle(|cpu| cpu.read(cpu.0.regs.hl())),
+            Src::Immediate => self.cycle(|cpu| cpu.read(cpu.0.regs.pc).increment_pc()),
+        }
+    }
+
+    fn write_dest(&mut self, dest: CommonOperand) -> &mut Self {
+        match dest {
+            CommonOperand::Reg(r) => self.micro_op(|cpu| {
+                *cpu.0.regs.reg(r) = cpu.0.state.data_buffer;
+                cpu
+            }),
+            CommonOperand::DerefHl => {
+                self.cycle(|cpu| cpu.write(cpu.0.regs.hl(), cpu.0.state.data_buffer))
             }
-            Src::Common(CommonOperand::DerefHl) => cpu.read(cpu.0.regs.hl()),
-            Src::Immediate => cpu.read(cpu.0.regs.pc).increment_pc(),
-        })
+        }
     }
 
     fn ret(&mut self) -> &mut Self {
@@ -491,6 +501,20 @@ impl<'a> ComplexInstrExecution<'a> {
         };
         self.sweep_m_cycle = self.sweep_m_cycle.next();
         self.output = self.output.take().or(output);
+        self
+    }
+
+    fn micro_op<
+        F: for<'r, 's> FnOnce(&'s mut DelayedOutput<'r, 'a>) -> &'s mut DelayedOutput<'r, 'a>,
+    >(
+        &mut self,
+        f: F,
+    ) -> &mut Self {
+        if self.state.m_cycle == self.sweep_m_cycle {
+            let mut delayed_output = DelayedOutput(self, None);
+            f(&mut delayed_output);
+            assert_eq!(delayed_output.1, None)
+        }
         self
     }
 
@@ -538,6 +562,18 @@ impl<'a, 'b: 'a> DelayedOutput<'a, 'b> {
     fn read(&mut self, addr: u16) -> &mut Self {
         let output = match self.0.phase {
             Tick => Some(BusOp::Read(addr)),
+            Tock => {
+                self.0.state.data_buffer = self.0.input.data.unwrap();
+                None
+            }
+        };
+        self.1 = Some(output);
+        self
+    }
+
+    fn write(&mut self, addr: u16, data: u8) -> &mut Self {
+        let output = match self.0.phase {
+            Tick => Some(BusOp::Write(addr, data)),
             Tock => None,
         };
         self.1 = Some(output);
