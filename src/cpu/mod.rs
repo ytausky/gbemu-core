@@ -246,7 +246,7 @@ impl Regs {
 
 impl Cpu {
     pub fn step(&mut self, input: &Input) -> CpuOutput {
-        let (new_mode, output) = match &mut self.mode {
+        let (mode_transition, output) = match &mut self.mode {
             Mode::Run(stage) => RunModeCpu {
                 regs: &mut self.regs,
                 stage,
@@ -255,12 +255,28 @@ impl Cpu {
             }
             .step(),
         };
-        self.mode = new_mode;
+        if let Some(transition) = mode_transition {
+            self.mode = transition.into();
+        }
         self.phase = match self.phase {
             Tick => Tock,
             Tock => Tick,
         };
         output
+    }
+}
+
+enum ModeTransition {
+    Run(Opcode),
+}
+
+impl From<ModeTransition> for Mode {
+    fn from(transition: ModeTransition) -> Self {
+        match transition {
+            ModeTransition::Run(opcode) => {
+                Mode::Run(Stage::Execute(ExecuteState::new(opcode.decode().unwrap())))
+            }
+        }
     }
 }
 
@@ -272,7 +288,7 @@ struct RunModeCpu<'a> {
 }
 
 impl<'a> RunModeCpu<'a> {
-    fn step(&mut self) -> (Mode, CpuOutput) {
+    fn step(&mut self) -> (Option<ModeTransition>, CpuOutput) {
         match self.stage {
             Stage::Execute(ExecuteState::Simple(state)) => SimpleInstrExecution {
                 regs: self.regs,
@@ -281,28 +297,25 @@ impl<'a> RunModeCpu<'a> {
                 input: self.input,
             }
             .step(),
-            Stage::Execute(ExecuteState::Complex(state)) => ComplexInstrExecution {
-                regs: self.regs,
-                new_mode: {
-                    let m_cycle = match self.phase {
+            Stage::Execute(ExecuteState::Complex(state)) => {
+                let (transition, output) = ComplexInstrExecution {
+                    regs: self.regs,
+                    mode_transition: None,
+                    state,
+                    phase: self.phase,
+                    input: self.input,
+                    sweep_m_cycle: M1,
+                    output: None,
+                }
+                .exec_instr();
+                if transition.is_none() {
+                    state.m_cycle = match self.phase {
                         Tick => state.m_cycle,
                         Tock => state.m_cycle.next(),
                     };
-                    Mode::Run(Stage::Execute(ExecuteState::Complex(
-                        ComplexInstrExecState {
-                            opcode: state.opcode,
-                            m_cycle,
-                            data_buffer: state.data_buffer,
-                        },
-                    )))
-                },
-                state,
-                phase: self.phase,
-                input: self.input,
-                sweep_m_cycle: M1,
-                output: None,
+                }
+                (transition, output)
             }
-            .exec_instr(),
         }
     }
 }
@@ -315,7 +328,7 @@ struct SimpleInstrExecution<'a> {
 }
 
 impl<'a> SimpleInstrExecution<'a> {
-    fn step(&mut self) -> (Mode, CpuOutput) {
+    fn step(&mut self) -> (Option<ModeTransition>, CpuOutput) {
         loop {
             let output = match &self.state.step {
                 MicroStep::Read => self.read(),
@@ -333,19 +346,14 @@ impl<'a> SimpleInstrExecution<'a> {
                     Tock => {
                         self.regs.pc += 1;
                         return (
-                            Mode::Run(Stage::Execute(ExecuteState::new(
-                                Opcode(self.input.data.unwrap()).decode().unwrap(),
-                            ))),
+                            Some(ModeTransition::Run(Opcode(self.input.data.unwrap()))),
                             None,
                         );
                     }
                 },
             };
             if let Some(output) = output {
-                return (
-                    Mode::Run(Stage::Execute(ExecuteState::Simple(self.state.clone()))),
-                    output,
-                );
+                return (None, output);
             }
         }
     }
@@ -416,14 +424,14 @@ struct ComplexInstrExecution<'a> {
     regs: &'a mut Regs,
     state: &'a mut ComplexInstrExecState,
     phase: &'a Phase,
-    new_mode: Mode,
+    mode_transition: Option<ModeTransition>,
     input: &'a Input,
     sweep_m_cycle: MCycle,
     output: Option<CpuOutput>,
 }
 
 impl<'a> ComplexInstrExecution<'a> {
-    fn exec_instr(mut self) -> (Mode, CpuOutput) {
+    fn exec_instr(mut self) -> (Option<ModeTransition>, CpuOutput) {
         let output = match self.state.opcode.split() {
             (0b00, 0b000, 0b000) => self.nop(),
             (0b01, 0b110, 0b110) => self.halt(),
@@ -431,7 +439,7 @@ impl<'a> ComplexInstrExecution<'a> {
             _ => unimplemented!(),
         }
         .done();
-        (self.new_mode, output)
+        (self.mode_transition, output)
     }
 
     fn nop(&mut self) -> &mut Self {
@@ -514,9 +522,7 @@ impl<'a, 'b: 'a> DelayedOutput<'a, 'b> {
 
     fn decode(&mut self) -> &mut Self {
         self.on_tock(|cpu| {
-            cpu.new_mode = Mode::Run(Stage::Execute(ExecuteState::new(
-                Opcode(cpu.input.data.unwrap()).decode().unwrap(),
-            )))
+            cpu.mode_transition = Some(ModeTransition::Run(Opcode(cpu.input.data.unwrap())))
         })
     }
 
