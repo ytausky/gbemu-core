@@ -49,37 +49,7 @@ pub struct Flags {
 }
 
 enum Mode {
-    Run(Stage),
-}
-
-enum Stage {
-    Execute(ExecuteState),
-}
-
-enum ExecuteState {
-    Simple(SimpleInstrExecState),
-    Complex(ComplexInstrExecState),
-}
-
-enum DecodedOpcode {
-    Simple(SimpleInstr),
-    Complex(Opcode),
-}
-
-impl ExecuteState {
-    fn new(decoded_opcode: DecodedOpcode) -> Self {
-        match decoded_opcode {
-            DecodedOpcode::Simple(instr) => ExecuteState::Simple(SimpleInstrExecState {
-                instr,
-                step: MicroStep::Read,
-            }),
-            DecodedOpcode::Complex(opcode) => ExecuteState::Complex(ComplexInstrExecState {
-                opcode,
-                m_cycle: M1,
-                data_buffer: 0xff,
-            }),
-        }
-    }
+    Run(ComplexInstrExecState),
 }
 
 struct ComplexInstrExecState {
@@ -89,27 +59,9 @@ struct ComplexInstrExecState {
 }
 
 #[derive(Clone)]
-struct SimpleInstrExecState {
-    instr: SimpleInstr,
-    step: MicroStep,
-}
-
-#[derive(Clone)]
-struct SimpleInstr {
-    src: Src,
-    op: Op,
-    dest: Option<CommonOperand>,
-}
-
-#[derive(Clone)]
 enum Src {
     Common(CommonOperand),
     Immediate,
-}
-
-#[derive(Clone)]
-enum Op {
-    Alu(AluOp),
 }
 
 #[derive(Clone)]
@@ -146,34 +98,10 @@ enum CommonOperand {
     DerefHl,
 }
 
-#[derive(Clone)]
-enum MicroStep {
-    Read,
-    Action(u8),
-    Write(u8, Flags),
-    Fetch,
-}
-
 #[derive(Clone, Copy)]
 struct Opcode(u8);
 
 impl Opcode {
-    fn decode(self) -> Option<DecodedOpcode> {
-        match self.split() {
-            (0b10, op, rhs) => Some(DecodedOpcode::Simple(SimpleInstr {
-                src: Src::Common(rhs.into()),
-                op: Op::Alu(op.into()),
-                dest: Some(CommonOperand::Reg(R::A)),
-            })),
-            (0b11, op, 0b110) => Some(DecodedOpcode::Simple(SimpleInstr {
-                src: Src::Immediate,
-                op: Op::Alu(op.into()),
-                dest: Some(CommonOperand::Reg(R::A)),
-            })),
-            _ => Some(DecodedOpcode::Complex(self)),
-        }
-    }
-
     fn split(self) -> (u8, u8, u8) {
         (self.0 >> 6, (self.0 >> 3) & 0b111, self.0 & 0b111)
     }
@@ -204,7 +132,7 @@ impl Default for Cpu {
     fn default() -> Self {
         Self {
             regs: Default::default(),
-            mode: Mode::Run(Stage::Execute(ExecuteState::Complex(Default::default()))),
+            mode: Mode::Run(Default::default()),
             phase: Tick,
         }
     }
@@ -267,153 +195,45 @@ enum ModeTransition {
 impl From<ModeTransition> for Mode {
     fn from(transition: ModeTransition) -> Self {
         match transition {
-            ModeTransition::Run(opcode) => {
-                Mode::Run(Stage::Execute(ExecuteState::new(opcode.decode().unwrap())))
-            }
+            ModeTransition::Run(opcode) => Mode::Run(ComplexInstrExecState {
+                opcode,
+                m_cycle: M1,
+                data_buffer: 0xff,
+            }),
         }
     }
 }
 
 struct RunModeCpu<'a> {
     regs: &'a mut Regs,
-    stage: &'a mut Stage,
+    stage: &'a mut ComplexInstrExecState,
     phase: &'a Phase,
     input: &'a Input,
 }
 
 impl<'a> RunModeCpu<'a> {
     fn step(&mut self) -> (Option<ModeTransition>, CpuOutput) {
-        match self.stage {
-            Stage::Execute(ExecuteState::Simple(state)) => SimpleInstrExecution {
-                regs: self.regs,
-                state,
-                phase: self.phase,
-                input: self.input,
-            }
-            .step(),
-            Stage::Execute(ExecuteState::Complex(state)) => {
-                let (transition, output) = ComplexInstrExecution {
-                    regs: self.regs,
-                    mode_transition: None,
-                    state,
-                    phase: self.phase,
-                    input: self.input,
-                    sweep_m_cycle: M1,
-                    output: None,
-                }
-                .exec_instr();
-                if transition.is_none() {
-                    state.m_cycle = match self.phase {
-                        Tick => state.m_cycle,
-                        Tock => state.m_cycle.next(),
-                    };
-                }
-                (transition, output)
-            }
+        let (transition, output) = InstrExecution {
+            regs: self.regs,
+            mode_transition: None,
+            state: self.stage,
+            phase: self.phase,
+            input: self.input,
+            sweep_m_cycle: M1,
+            output: None,
         }
-    }
-}
-
-struct SimpleInstrExecution<'a> {
-    regs: &'a mut Regs,
-    state: &'a mut SimpleInstrExecState,
-    phase: &'a Phase,
-    input: &'a Input,
-}
-
-impl<'a> SimpleInstrExecution<'a> {
-    fn step(&mut self) -> (Option<ModeTransition>, CpuOutput) {
-        loop {
-            let output = match &self.state.step {
-                MicroStep::Read => self.read(),
-                MicroStep::Action(operand) => {
-                    let operand = *operand;
-                    self.act(operand)
-                }
-                MicroStep::Write(result, flags) => {
-                    let result = *result;
-                    let flags = flags.clone();
-                    self.write(result, flags)
-                }
-                MicroStep::Fetch => match self.phase {
-                    Tick => Some(Some(BusOp::Read(self.regs.pc))),
-                    Tock => {
-                        self.regs.pc += 1;
-                        return (
-                            Some(ModeTransition::Run(Opcode(self.input.data.unwrap()))),
-                            None,
-                        );
-                    }
-                },
+        .exec_instr();
+        if transition.is_none() {
+            self.stage.m_cycle = match self.phase {
+                Tick => self.stage.m_cycle,
+                Tock => self.stage.m_cycle.next(),
             };
-            if let Some(output) = output {
-                return (None, output);
-            }
         }
-    }
-
-    fn read(&mut self) -> Option<CpuOutput> {
-        match self.state.instr.src {
-            Src::Common(CommonOperand::Reg(r)) => {
-                self.state.step = MicroStep::Action(*self.regs.reg(r));
-                None
-            }
-            Src::Common(CommonOperand::DerefHl) => match self.phase {
-                Tick => Some(Some(BusOp::Read(self.regs.hl()))),
-                Tock => {
-                    self.state.step = MicroStep::Action(self.input.data.unwrap());
-                    Some(None)
-                }
-            },
-            Src::Immediate => match self.phase {
-                Tick => Some(Some(BusOp::Read(self.regs.pc))),
-                Tock => {
-                    self.regs.pc += 1;
-                    self.state.step = MicroStep::Action(self.input.data.unwrap());
-                    Some(None)
-                }
-            },
-        }
-    }
-
-    fn act(&mut self, operand: u8) -> Option<CpuOutput> {
-        let (result, flags) = match self.state.instr.op {
-            Op::Alu(AluOp::Add) => alu::add(self.regs.a, operand, false),
-            Op::Alu(AluOp::Adc) => alu::add(self.regs.a, operand, self.regs.f.cy),
-            Op::Alu(AluOp::Sub) => alu::sub(self.regs.a, operand, false),
-            Op::Alu(AluOp::Sbc) => alu::sub(self.regs.a, operand, self.regs.f.cy),
-            Op::Alu(AluOp::And) => alu::and(self.regs.a, operand),
-            Op::Alu(AluOp::Xor) => alu::xor(self.regs.a, operand),
-            Op::Alu(AluOp::Or) => alu::or(self.regs.a, operand),
-            Op::Alu(AluOp::Cp) => {
-                let (_, flags) = alu::sub(self.regs.a, operand, false);
-                (self.regs.a, flags)
-            }
-        };
-        self.state.step = MicroStep::Write(result, flags);
-        None
-    }
-
-    fn write(&mut self, result: u8, flags: Flags) -> Option<CpuOutput> {
-        self.regs.f = flags;
-        self.state.instr.dest.and_then(|dest| match dest {
-            CommonOperand::Reg(r) => {
-                *self.regs.reg(r) = result;
-                self.state.step = MicroStep::Fetch;
-                None
-            }
-            CommonOperand::DerefHl => match self.phase {
-                Tick => Some(Some(BusOp::Write(self.regs.hl(), result))),
-                Tock => {
-                    self.state.step = MicroStep::Fetch;
-                    Some(None)
-                }
-            },
-        })
+        (transition, output)
     }
 }
 
-struct ComplexInstrExecution<'a> {
+struct InstrExecution<'a> {
     regs: &'a mut Regs,
     state: &'a mut ComplexInstrExecState,
     phase: &'a Phase,
@@ -423,17 +243,18 @@ struct ComplexInstrExecution<'a> {
     output: Option<CpuOutput>,
 }
 
-impl<'a> ComplexInstrExecution<'a> {
+impl<'a> InstrExecution<'a> {
     fn exec_instr(mut self) -> (Option<ModeTransition>, CpuOutput) {
-        let output = match self.state.opcode.split() {
+        match self.state.opcode.split() {
             (0b00, 0b000, 0b000) => self.nop(),
             (0b01, 0b110, 0b110) => self.halt(),
             (0b01, dest, src) => self.ld(dest.into(), Src::Common(src.into())),
+            (0b10, op, src) => self.alu_op(op.into(), Src::Common(src.into())),
+            (0b11, op, 0b110) => self.alu_op(op.into(), Src::Immediate),
             (0b11, 0b001, 0b001) => self.ret(),
             _ => unimplemented!(),
-        }
-        .done();
-        (self.mode_transition, output)
+        };
+        (self.mode_transition, self.output.unwrap())
     }
 
     fn nop(&mut self) -> &mut Self {
@@ -450,52 +271,40 @@ impl<'a> ComplexInstrExecution<'a> {
 
     fn read_src(&mut self, src: Src) -> &mut Self {
         match src {
-            Src::Common(CommonOperand::Reg(r)) => self.micro_op(|cpu| {
-                cpu.0.state.data_buffer = *cpu.0.regs.reg(r);
-                cpu
-            }),
-            Src::Common(CommonOperand::DerefHl) => self.cycle(|cpu| cpu.read(cpu.0.regs.hl())),
-            Src::Immediate => self.cycle(|cpu| cpu.read(cpu.0.regs.pc).increment_pc()),
+            Src::Common(CommonOperand::Reg(r)) => self.micro_op(|cpu| cpu.read_reg(r)),
+            Src::Common(CommonOperand::DerefHl) => self.cycle(|cpu| cpu.read(cpu.regs.hl())),
+            Src::Immediate => self.cycle(|cpu| cpu.read(cpu.regs.pc).increment_pc()),
         }
     }
 
     fn write_dest(&mut self, dest: CommonOperand) -> &mut Self {
         match dest {
-            CommonOperand::Reg(r) => self.micro_op(|cpu| {
-                *cpu.0.regs.reg(r) = cpu.0.state.data_buffer;
-                cpu
-            }),
-            CommonOperand::DerefHl => {
-                self.cycle(|cpu| cpu.write(cpu.0.regs.hl(), cpu.0.state.data_buffer))
-            }
+            CommonOperand::Reg(r) => self.micro_op(|cpu| cpu.write_reg(r)),
+            CommonOperand::DerefHl => self.cycle(|cpu| cpu.write(cpu.regs.hl(), *cpu.data_buffer)),
         }
     }
 
-    fn ret(&mut self) -> &mut Self {
-        self.cycle(|cpu| {
-            cpu.read(cpu.0.regs.sp)
-                .increment_sp()
-                .set_pc_low_from_data()
-        })
-        .cycle(|cpu| {
-            cpu.read(cpu.0.regs.sp)
-                .increment_sp()
-                .set_pc_high_from_data()
-        })
-        .cycle(|cpu| cpu.no_operation())
-        .cycle(|cpu| cpu.fetch())
+    fn alu_op(&mut self, op: AluOp, rhs: Src) -> &mut Self {
+        self.read_src(rhs)
+            .micro_op(|cpu| cpu.alu_op(op))
+            .cycle(|cpu| cpu.fetch())
     }
 
-    fn cycle<
-        F: for<'r, 's> FnOnce(&'s mut DelayedOutput<'r, 'a>) -> &'s mut DelayedOutput<'r, 'a>,
-    >(
-        &mut self,
-        f: F,
-    ) -> &mut Self {
+    fn ret(&mut self) -> &mut Self {
+        self.cycle(|cpu| cpu.read(cpu.regs.sp).increment_sp().set_pc_low_from_data())
+            .cycle(|cpu| cpu.read(cpu.regs.sp).increment_sp().set_pc_high_from_data())
+            .cycle(|cpu| cpu.no_operation())
+            .cycle(|cpu| cpu.fetch())
+    }
+
+    fn cycle<F>(&mut self, f: F) -> &mut Self
+    where
+        F: for<'r, 's> FnOnce(&'s mut CpuProxy<'r>) -> &'s mut CpuProxy<'r>,
+    {
         let output = if self.state.m_cycle == self.sweep_m_cycle {
-            let mut delayed_output = DelayedOutput(self, None);
-            f(&mut delayed_output);
-            Some(delayed_output.1.unwrap())
+            let mut cpu_proxy = self.cpu_proxy();
+            f(&mut cpu_proxy);
+            Some(cpu_proxy.output.unwrap())
         } else {
             None
         };
@@ -504,28 +313,40 @@ impl<'a> ComplexInstrExecution<'a> {
         self
     }
 
-    fn micro_op<
-        F: for<'r, 's> FnOnce(&'s mut DelayedOutput<'r, 'a>) -> &'s mut DelayedOutput<'r, 'a>,
-    >(
-        &mut self,
-        f: F,
-    ) -> &mut Self {
+    fn micro_op<F>(&mut self, f: F) -> &mut Self
+    where
+        F: for<'r, 's> FnOnce(&'s mut CpuProxy<'r>) -> &'s mut CpuProxy<'r>,
+    {
         if self.state.m_cycle == self.sweep_m_cycle {
-            let mut delayed_output = DelayedOutput(self, None);
-            f(&mut delayed_output);
-            assert_eq!(delayed_output.1, None)
+            let mut cpu_proxy = self.cpu_proxy();
+            f(&mut cpu_proxy);
+            assert_eq!(cpu_proxy.output, None)
         }
         self
     }
 
-    fn done(&mut self) -> CpuOutput {
-        self.output.take().unwrap()
+    fn cpu_proxy(&mut self) -> CpuProxy {
+        CpuProxy {
+            regs: self.regs,
+            data_buffer: &mut self.state.data_buffer,
+            mode_transition: &mut self.mode_transition,
+            phase: *self.phase,
+            input: self.input,
+            output: None,
+        }
     }
 }
 
-struct DelayedOutput<'a, 'b: 'a>(&'a mut ComplexInstrExecution<'b>, Option<CpuOutput>);
+struct CpuProxy<'a> {
+    regs: &'a mut Regs,
+    data_buffer: &'a mut u8,
+    phase: Phase,
+    mode_transition: &'a mut Option<ModeTransition>,
+    input: &'a Input,
+    output: Option<CpuOutput>,
+}
 
-impl<'a, 'b: 'a> DelayedOutput<'a, 'b> {
+impl<'a> CpuProxy<'a> {
     fn increment_pc(&mut self) -> &mut Self {
         self.on_tock(|cpu| cpu.regs.pc += 1)
     }
@@ -546,43 +367,76 @@ impl<'a, 'b: 'a> DelayedOutput<'a, 'b> {
 
     fn decode(&mut self) -> &mut Self {
         self.on_tock(|cpu| {
-            cpu.mode_transition = Some(ModeTransition::Run(Opcode(cpu.input.data.unwrap())))
+            *cpu.mode_transition = Some(ModeTransition::Run(Opcode(cpu.input.data.unwrap())))
         })
     }
 
     fn no_operation(&mut self) -> &mut Self {
-        self.1 = Some(None);
+        self.output = Some(None);
         self
     }
 
     fn fetch(&mut self) -> &mut Self {
-        self.read(self.0.regs.pc).increment_pc().decode()
+        self.read(self.regs.pc).increment_pc().decode()
     }
 
     fn read(&mut self, addr: u16) -> &mut Self {
-        let output = match self.0.phase {
+        self.output = Some(match self.phase {
             Tick => Some(BusOp::Read(addr)),
             Tock => {
-                self.0.state.data_buffer = self.0.input.data.unwrap();
+                *self.data_buffer = self.input.data.unwrap();
                 None
             }
-        };
-        self.1 = Some(output);
+        });
         self
     }
 
     fn write(&mut self, addr: u16, data: u8) -> &mut Self {
-        let output = match self.0.phase {
+        self.output = Some(match self.phase {
             Tick => Some(BusOp::Write(addr, data)),
             Tock => None,
-        };
-        self.1 = Some(output);
+        });
         self
     }
 
-    fn on_tock(&mut self, f: impl FnOnce(&mut ComplexInstrExecution<'b>)) -> &mut Self {
-        if *self.0.phase == Tock {
-            f(self.0)
+    fn read_reg(&mut self, r: R) -> &mut Self {
+        self.on_tick(|cpu| *cpu.data_buffer = *cpu.regs.reg(r))
+    }
+
+    fn write_reg(&mut self, r: R) -> &mut Self {
+        self.on_tock(|cpu| *cpu.regs.reg(r) = *cpu.data_buffer)
+    }
+
+    fn alu_op(&mut self, op: AluOp) -> &mut Self {
+        self.on_tock(|cpu| {
+            let (result, flags) = match op {
+                AluOp::Add => alu::add(cpu.regs.a, *cpu.data_buffer, false),
+                AluOp::Adc => alu::add(cpu.regs.a, *cpu.data_buffer, cpu.regs.f.cy),
+                AluOp::Sub => alu::sub(cpu.regs.a, *cpu.data_buffer, false),
+                AluOp::Sbc => alu::sub(cpu.regs.a, *cpu.data_buffer, cpu.regs.f.cy),
+                AluOp::And => alu::and(cpu.regs.a, *cpu.data_buffer),
+                AluOp::Xor => alu::xor(cpu.regs.a, *cpu.data_buffer),
+                AluOp::Or => alu::or(cpu.regs.a, *cpu.data_buffer),
+                AluOp::Cp => {
+                    let (_, flags) = alu::sub(cpu.regs.a, *cpu.data_buffer, false);
+                    (cpu.regs.a, flags)
+                }
+            };
+            cpu.regs.a = result;
+            cpu.regs.f = flags;
+        })
+    }
+
+    fn on_tick(&mut self, f: impl FnOnce(&mut Self)) -> &mut Self {
+        if self.phase == Tick {
+            f(self)
+        }
+        self
+    }
+
+    fn on_tock(&mut self, f: impl FnOnce(&mut Self)) -> &mut Self {
+        if self.phase == Tock {
+            f(self)
         }
         self
     }
