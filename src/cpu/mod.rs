@@ -59,9 +59,42 @@ struct ComplexInstrExecState {
 }
 
 #[derive(Clone)]
-enum Src {
-    Common(CommonOperand),
-    Immediate,
+enum S {
+    M(M),
+    N,
+}
+
+#[derive(Clone, Copy)]
+enum M {
+    R(R),
+    DerefHl,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum R {
+    A,
+    B,
+    C,
+    D,
+    E,
+    H,
+    L,
+}
+
+impl From<u8> for M {
+    fn from(encoding: u8) -> Self {
+        match encoding {
+            0b000 => M::R(R::B),
+            0b001 => M::R(R::C),
+            0b010 => M::R(R::D),
+            0b011 => M::R(R::E),
+            0b100 => M::R(R::H),
+            0b101 => M::R(R::L),
+            0b110 => M::DerefHl,
+            0b111 => M::R(R::A),
+            _ => panic!(),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -90,12 +123,6 @@ impl From<u8> for AluOp {
             _ => panic!(),
         }
     }
-}
-
-#[derive(Clone, Copy)]
-enum CommonOperand {
-    Reg(R),
-    DerefHl,
 }
 
 #[derive(Clone, Copy)]
@@ -248,9 +275,9 @@ impl<'a> InstrExecution<'a> {
         match self.state.opcode.split() {
             (0b00, 0b000, 0b000) => self.nop(),
             (0b01, 0b110, 0b110) => self.halt(),
-            (0b01, dest, src) => self.ld(dest.into(), Src::Common(src.into())),
-            (0b10, op, src) => self.alu_op(op.into(), Src::Common(src.into())),
-            (0b11, op, 0b110) => self.alu_op(op.into(), Src::Immediate),
+            (0b01, dest, src) => self.ld(dest.into(), S::M(src.into())),
+            (0b10, op, src) => self.alu_op(op.into(), S::M(src.into())),
+            (0b11, op, 0b110) => self.alu_op(op.into(), S::N),
             (0b11, 0b001, 0b001) => self.ret(),
             _ => unimplemented!(),
         };
@@ -265,27 +292,27 @@ impl<'a> InstrExecution<'a> {
         unimplemented!()
     }
 
-    fn ld(&mut self, dest: CommonOperand, src: Src) -> &mut Self {
-        self.read_src(src).write_dest(dest).cycle(|cpu| cpu.fetch())
+    fn ld(&mut self, dest: M, src: S) -> &mut Self {
+        self.read_s(src).write_m(dest).cycle(|cpu| cpu.fetch())
     }
 
-    fn read_src(&mut self, src: Src) -> &mut Self {
-        match src {
-            Src::Common(CommonOperand::Reg(r)) => self.micro_op(|cpu| cpu.read_reg(r)),
-            Src::Common(CommonOperand::DerefHl) => self.cycle(|cpu| cpu.read(cpu.regs.hl())),
-            Src::Immediate => self.cycle(|cpu| cpu.read(cpu.regs.pc).increment_pc()),
+    fn read_s(&mut self, s: S) -> &mut Self {
+        match s {
+            S::M(M::R(r)) => self.micro_op(|cpu| cpu.read_reg(r)),
+            S::M(M::DerefHl) => self.cycle(|cpu| cpu.read(cpu.regs.hl())),
+            S::N => self.cycle(|cpu| cpu.read(cpu.regs.pc).increment_pc()),
         }
     }
 
-    fn write_dest(&mut self, dest: CommonOperand) -> &mut Self {
-        match dest {
-            CommonOperand::Reg(r) => self.micro_op(|cpu| cpu.write_reg(r)),
-            CommonOperand::DerefHl => self.cycle(|cpu| cpu.write(cpu.regs.hl(), *cpu.data_buffer)),
+    fn write_m(&mut self, m: M) -> &mut Self {
+        match m {
+            M::R(r) => self.micro_op(|cpu| cpu.write_reg(r)),
+            M::DerefHl => self.cycle(|cpu| cpu.write(cpu.regs.hl(), *cpu.data_buffer)),
         }
     }
 
-    fn alu_op(&mut self, op: AluOp, rhs: Src) -> &mut Self {
-        self.read_src(rhs)
+    fn alu_op(&mut self, op: AluOp, rhs: S) -> &mut Self {
+        self.read_s(rhs)
             .micro_op(|cpu| cpu.alu_op(op))
             .cycle(|cpu| cpu.fetch())
     }
@@ -451,33 +478,6 @@ struct AluOutput {
 #[derive(Clone)]
 pub struct Input {
     data: Option<u8>,
-}
-
-#[derive(Clone, Copy, PartialEq)]
-enum R {
-    A,
-    B,
-    C,
-    D,
-    E,
-    H,
-    L,
-}
-
-impl From<u8> for CommonOperand {
-    fn from(encoding: u8) -> Self {
-        match encoding {
-            0b000 => CommonOperand::Reg(R::B),
-            0b001 => CommonOperand::Reg(R::C),
-            0b010 => CommonOperand::Reg(R::D),
-            0b011 => CommonOperand::Reg(R::E),
-            0b100 => CommonOperand::Reg(R::H),
-            0b101 => CommonOperand::Reg(R::L),
-            0b110 => CommonOperand::DerefHl,
-            0b111 => CommonOperand::Reg(R::A),
-            _ => panic!(),
-        }
-    }
 }
 
 #[derive(Clone, Copy, PartialEq)]
