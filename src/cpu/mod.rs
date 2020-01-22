@@ -56,6 +56,8 @@ struct ComplexInstrExecState {
     opcode: Opcode,
     m_cycle: MCycle,
     data_buffer: u8,
+    addr_h: u8,
+    addr_l: u8,
 }
 
 #[derive(Clone)]
@@ -171,6 +173,8 @@ impl Default for ComplexInstrExecState {
             opcode: Opcode(0x00),
             m_cycle: M1,
             data_buffer: 0xff,
+            addr_h: 0xff,
+            addr_l: 0xff,
         }
     }
 }
@@ -226,6 +230,8 @@ impl From<ModeTransition> for Mode {
                 opcode,
                 m_cycle: M1,
                 data_buffer: 0xff,
+                addr_h: 0xff,
+                addr_l: 0xff,
             }),
         }
     }
@@ -298,16 +304,16 @@ impl<'a> InstrExecution<'a> {
 
     fn read_s(&mut self, s: S) -> &mut Self {
         match s {
-            S::M(M::R(r)) => self.micro_op(|cpu| cpu.read_reg(r)),
-            S::M(M::DerefHl) => self.cycle(|cpu| cpu.read(cpu.regs.hl())),
-            S::N => self.cycle(|cpu| cpu.read(cpu.regs.pc).increment_pc()),
+            S::M(M::R(r)) => self.micro_op(|cpu| cpu.read_r(r)),
+            S::M(M::DerefHl) => self.cycle(|cpu| cpu.bus_read(cpu.regs.hl())),
+            S::N => self.cycle(|cpu| cpu.bus_read(cpu.regs.pc).increment_pc()),
         }
     }
 
     fn write_m(&mut self, m: M) -> &mut Self {
         match m {
-            M::R(r) => self.micro_op(|cpu| cpu.write_reg(r)),
-            M::DerefHl => self.cycle(|cpu| cpu.write(cpu.regs.hl(), *cpu.data_buffer)),
+            M::R(r) => self.micro_op(|cpu| cpu.write_r(r)),
+            M::DerefHl => self.cycle(|cpu| cpu.bus_write(cpu.regs.hl(), *cpu.data_buffer)),
         }
     }
 
@@ -318,9 +324,9 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ret(&mut self) -> &mut Self {
-        self.cycle(|cpu| cpu.read(cpu.regs.sp).increment_sp().set_pc_low_from_data())
-            .cycle(|cpu| cpu.read(cpu.regs.sp).increment_sp().set_pc_high_from_data())
-            .cycle(|cpu| cpu.no_operation())
+        self.cycle(|cpu| cpu.bus_read(cpu.regs.sp).increment_sp().write_addr_l())
+            .cycle(|cpu| cpu.bus_read(cpu.regs.sp).increment_sp().write_addr_h())
+            .cycle(|cpu| cpu.bus_no_op().write_pc())
             .cycle(|cpu| cpu.fetch())
     }
 
@@ -356,6 +362,8 @@ impl<'a> InstrExecution<'a> {
         CpuProxy {
             regs: self.regs,
             data_buffer: &mut self.state.data_buffer,
+            addr_h: &mut self.state.addr_h,
+            addr_l: &mut self.state.addr_l,
             mode_transition: &mut self.mode_transition,
             phase: *self.phase,
             input: self.input,
@@ -367,6 +375,8 @@ impl<'a> InstrExecution<'a> {
 struct CpuProxy<'a> {
     regs: &'a mut Regs,
     data_buffer: &'a mut u8,
+    addr_h: &'a mut u8,
+    addr_l: &'a mut u8,
     phase: Phase,
     mode_transition: &'a mut Option<ModeTransition>,
     input: &'a Input,
@@ -382,32 +392,38 @@ impl<'a> CpuProxy<'a> {
         self.on_tock(|cpu| cpu.regs.sp += 1)
     }
 
-    fn set_pc_low_from_data(&mut self) -> &mut Self {
-        self.on_tock(|cpu| cpu.regs.pc = cpu.regs.pc & 0xff00 | u16::from(cpu.input.data.unwrap()))
+    fn write_addr_h(&mut self) -> &mut Self {
+        self.on_tock(|cpu| *cpu.addr_h = *cpu.data_buffer)
     }
 
-    fn set_pc_high_from_data(&mut self) -> &mut Self {
-        self.on_tock(|cpu| {
-            cpu.regs.pc = cpu.regs.pc & 0x00ff | (u16::from(cpu.input.data.unwrap()) << 8)
-        })
+    fn write_addr_l(&mut self) -> &mut Self {
+        self.on_tock(|cpu| *cpu.addr_l = *cpu.data_buffer)
+    }
+
+    fn write_pc(&mut self) -> &mut Self {
+        self.on_tock(|cpu| cpu.regs.pc = cpu.addr())
+    }
+
+    fn addr(&self) -> u16 {
+        u16::from(*self.addr_h) << 8 | u16::from(*self.addr_l)
     }
 
     fn decode(&mut self) -> &mut Self {
         self.on_tock(|cpu| {
-            *cpu.mode_transition = Some(ModeTransition::Run(Opcode(cpu.input.data.unwrap())))
+            *cpu.mode_transition = Some(ModeTransition::Run(Opcode(*cpu.data_buffer)))
         })
     }
 
-    fn no_operation(&mut self) -> &mut Self {
+    fn fetch(&mut self) -> &mut Self {
+        self.bus_read(self.regs.pc).increment_pc().decode()
+    }
+
+    fn bus_no_op(&mut self) -> &mut Self {
         self.output = Some(None);
         self
     }
 
-    fn fetch(&mut self) -> &mut Self {
-        self.read(self.regs.pc).increment_pc().decode()
-    }
-
-    fn read(&mut self, addr: u16) -> &mut Self {
+    fn bus_read(&mut self, addr: u16) -> &mut Self {
         self.output = Some(match self.phase {
             Tick => Some(BusOp::Read(addr)),
             Tock => {
@@ -418,7 +434,7 @@ impl<'a> CpuProxy<'a> {
         self
     }
 
-    fn write(&mut self, addr: u16, data: u8) -> &mut Self {
+    fn bus_write(&mut self, addr: u16, data: u8) -> &mut Self {
         self.output = Some(match self.phase {
             Tick => Some(BusOp::Write(addr, data)),
             Tock => None,
@@ -426,11 +442,11 @@ impl<'a> CpuProxy<'a> {
         self
     }
 
-    fn read_reg(&mut self, r: R) -> &mut Self {
+    fn read_r(&mut self, r: R) -> &mut Self {
         self.on_tick(|cpu| *cpu.data_buffer = *cpu.regs.reg(r))
     }
 
-    fn write_reg(&mut self, r: R) -> &mut Self {
+    fn write_r(&mut self, r: R) -> &mut Self {
         self.on_tock(|cpu| *cpu.regs.reg(r) = *cpu.data_buffer)
     }
 
