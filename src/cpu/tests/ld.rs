@@ -584,3 +584,18 @@ fn ld_a_deref_hld() {
     assert_eq!(cpu.regs.a, value);
     assert_eq!(cpu.regs.hl(), 0x8a5b)
 }
+
+#[test]
+fn ld_deref_bc_a() {
+    let mut cpu = Cpu::default();
+    cpu.regs.a = 0x3f;
+    cpu.regs.b = 0x02;
+    cpu.regs.c = 0x05;
+    cpu.test_simple_instr(
+        &[0b00_000_010],
+        &[
+            (Input::with_data(None), Some(BusOp::Write(0x0205, 0x3f))),
+            (Input::with_data(None), None),
+        ],
+    )
+}

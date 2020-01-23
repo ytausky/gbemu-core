@@ -304,6 +304,7 @@ impl<'a> InstrExecution<'a> {
     fn exec_instr(mut self) -> (Option<ModeTransition>, CpuOutput) {
         match self.state.opcode.split() {
             (0b00, 0b000, 0b000) => self.nop(),
+            (0b00, 0b000, 0b010) => self.ld_deref_bc_a(),
             (0b00, dest, 0b110) => self.ld(dest.into(), S::N),
             (0b00, 0b001, 0b010) => self.ld_a_deref_bc(),
             (0b00, 0b011, 0b010) => self.ld_a_deref_de(),
@@ -390,6 +391,11 @@ impl<'a> InstrExecution<'a> {
 
     fn ld_a_deref_hld(&mut self) -> &mut Self {
         self.cycle(|cpu| cpu.bus_read(cpu.regs.hl()).decrement_hl().write_r(R::A))
+            .cycle(|cpu| cpu.fetch())
+    }
+
+    fn ld_deref_bc_a(&mut self) -> &mut Self {
+        self.cycle(|cpu| cpu.bus_write(cpu.regs.bc(), cpu.regs.a))
             .cycle(|cpu| cpu.fetch())
     }
 
