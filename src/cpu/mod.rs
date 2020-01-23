@@ -311,6 +311,7 @@ impl<'a> InstrExecution<'a> {
             (0b00, 0b011, 0b010) => self.ld_a_deref_de(),
             (0b00, 0b100, 0b010) => self.ld_deref_hli_a(),
             (0b00, 0b101, 0b010) => self.ld_a_deref_hli(),
+            (0b00, 0b110, 0b010) => self.ld_deref_hld_a(),
             (0b00, 0b111, 0b010) => self.ld_a_deref_hld(),
             (0b01, 0b110, 0b110) => self.halt(),
             (0b01, dest, src) => self.ld(dest.into(), S::M(src.into())),
@@ -408,6 +409,11 @@ impl<'a> InstrExecution<'a> {
 
     fn ld_deref_hli_a(&mut self) -> &mut Self {
         self.cycle(|cpu| cpu.bus_write(cpu.regs.hl(), cpu.regs.a).increment_hl())
+            .cycle(|cpu| cpu.fetch())
+    }
+
+    fn ld_deref_hld_a(&mut self) -> &mut Self {
+        self.cycle(|cpu| cpu.bus_write(cpu.regs.hl(), cpu.regs.a).decrement_hl())
             .cycle(|cpu| cpu.fetch())
     }
 
