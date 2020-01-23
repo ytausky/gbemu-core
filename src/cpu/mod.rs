@@ -307,6 +307,7 @@ impl<'a> InstrExecution<'a> {
             (0b00, dest, 0b110) => self.ld(dest.into(), S::N),
             (0b00, 0b001, 0b010) => self.ld_a_deref_bc(),
             (0b00, 0b011, 0b010) => self.ld_a_deref_de(),
+            (0b00, 0b101, 0b010) => self.ld_a_deref_hli(),
             (0b01, 0b110, 0b110) => self.halt(),
             (0b01, dest, src) => self.ld(dest.into(), S::M(src.into())),
             (0b10, op, src) => self.alu_op(op.into(), S::M(src.into())),
@@ -378,6 +379,11 @@ impl<'a> InstrExecution<'a> {
         self.cycle(|cpu| cpu.read_immediate().write_addr_l())
             .cycle(|cpu| cpu.read_immediate().write_addr_h())
             .cycle(|cpu| cpu.bus_write(cpu.addr(), cpu.regs.a))
+            .cycle(|cpu| cpu.fetch())
+    }
+
+    fn ld_a_deref_hli(&mut self) -> &mut Self {
+        self.cycle(|cpu| cpu.bus_read(cpu.regs.hl()).increment_hl().write_r(R::A))
             .cycle(|cpu| cpu.fetch())
     }
 
@@ -465,6 +471,14 @@ struct CpuProxy<'a> {
 impl<'a> CpuProxy<'a> {
     fn read_immediate(&mut self) -> &mut Self {
         self.bus_read(self.regs.pc).increment_pc()
+    }
+
+    fn increment_hl(&mut self) -> &mut Self {
+        self.on_tock(|cpu| {
+            let hl = cpu.regs.hl() + 1;
+            cpu.regs.l = (hl & 0x00ff) as u8;
+            cpu.regs.h = (hl >> 8) as u8;
+        })
     }
 
     fn increment_pc(&mut self) -> &mut Self {

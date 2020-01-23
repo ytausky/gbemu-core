@@ -550,3 +550,20 @@ fn ld_deref_nn_a() {
         ],
     )
 }
+
+#[test]
+fn ld_a_deref_hli() {
+    let mut cpu = Cpu::default();
+    cpu.regs.h = 0x01;
+    cpu.regs.l = 0xff;
+    let value = 0x56;
+    cpu.test_simple_instr(
+        &[0b00_101_010],
+        &[
+            (Input::with_data(None), Some(BusOp::Read(0x01ff))),
+            (Input::with_data(Some(value)), None),
+        ],
+    );
+    assert_eq!(cpu.regs.a, value);
+    assert_eq!(cpu.regs.hl(), 0x0200)
+}
