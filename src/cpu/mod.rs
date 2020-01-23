@@ -344,27 +344,24 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ld_a_deref_c(&mut self) -> &mut Self {
-        self.cycle(|cpu| cpu.bus_read(0xff00 + u16::from(cpu.regs.c)).write_r(R::A))
+        self.cycle(|cpu| cpu.bus_read(0xff00 | u16::from(cpu.regs.c)).write_r(R::A))
             .cycle(|cpu| cpu.fetch())
     }
 
     fn ld_deref_c_a(&mut self) -> &mut Self {
-        self.cycle(|cpu| cpu.bus_write(0xff00 + u16::from(cpu.regs.c), cpu.regs.a))
+        self.cycle(|cpu| cpu.bus_write(0xff00 | u16::from(cpu.regs.c), cpu.regs.a))
             .cycle(|cpu| cpu.fetch())
     }
 
     fn ld_a_deref_n(&mut self) -> &mut Self {
-        self.cycle(|cpu| cpu.bus_read(cpu.regs.pc).increment_pc())
-            .cycle(|cpu| {
-                let addr = 0xff00 + u16::from(*cpu.data_buffer);
-                cpu.bus_read(addr)
-            })
+        self.cycle(|cpu| cpu.read_immediate())
+            .cycle(|cpu| cpu.bus_read(0xff00 | u16::from(*cpu.data_buffer)))
             .cycle(|cpu| cpu.write_r(R::A).fetch())
     }
 
     fn ld_deref_n_a(&mut self) -> &mut Self {
-        self.cycle(|cpu| cpu.bus_read(cpu.regs.pc).increment_pc())
-            .cycle(|cpu| cpu.bus_write(0xff00 + u16::from(*cpu.data_buffer), cpu.regs.a))
+        self.cycle(|cpu| cpu.read_immediate())
+            .cycle(|cpu| cpu.bus_write(0xff00 | u16::from(*cpu.data_buffer), cpu.regs.a))
             .cycle(|cpu| cpu.write_r(R::A).fetch())
     }
 
@@ -372,7 +369,7 @@ impl<'a> InstrExecution<'a> {
         match s {
             S::M(M::R(r)) => self.micro_op(|cpu| cpu.read_r(r)),
             S::M(M::DerefHl) => self.cycle(|cpu| cpu.bus_read(cpu.regs.hl())),
-            S::N => self.cycle(|cpu| cpu.bus_read(cpu.regs.pc).increment_pc()),
+            S::N => self.cycle(|cpu| cpu.read_immediate()),
         }
     }
 
@@ -450,6 +447,10 @@ struct CpuProxy<'a> {
 }
 
 impl<'a> CpuProxy<'a> {
+    fn read_immediate(&mut self) -> &mut Self {
+        self.bus_read(self.regs.pc).increment_pc()
+    }
+
     fn increment_pc(&mut self) -> &mut Self {
         self.on_tock(|cpu| cpu.regs.pc += 1)
     }
