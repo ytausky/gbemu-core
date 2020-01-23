@@ -184,6 +184,10 @@ impl Regs {
         self.pair(R::B, R::C)
     }
 
+    fn de(&self) -> u16 {
+        self.pair(R::D, R::E)
+    }
+
     fn hl(&self) -> u16 {
         self.pair(R::H, R::L)
     }
@@ -302,6 +306,7 @@ impl<'a> InstrExecution<'a> {
             (0b00, 0b000, 0b000) => self.nop(),
             (0b00, dest, 0b110) => self.ld(dest.into(), S::N),
             (0b00, 0b001, 0b010) => self.ld_a_deref_bc(),
+            (0b00, 0b011, 0b010) => self.ld_a_deref_de(),
             (0b01, 0b110, 0b110) => self.halt(),
             (0b01, dest, src) => self.ld(dest.into(), S::M(src.into())),
             (0b10, op, src) => self.alu_op(op.into(), S::M(src.into())),
@@ -326,6 +331,11 @@ impl<'a> InstrExecution<'a> {
 
     fn ld_a_deref_bc(&mut self) -> &mut Self {
         self.cycle(|cpu| cpu.bus_read(cpu.regs.bc()).write_r(R::A))
+            .cycle(|cpu| cpu.fetch())
+    }
+
+    fn ld_a_deref_de(&mut self) -> &mut Self {
+        self.cycle(|cpu| cpu.bus_read(cpu.regs.de()).write_r(R::A))
             .cycle(|cpu| cpu.fetch())
     }
 
