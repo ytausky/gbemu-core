@@ -309,6 +309,7 @@ impl<'a> InstrExecution<'a> {
             (0b00, 0b001, 0b010) => self.ld_a_deref_bc(),
             (0b00, 0b010, 0b010) => self.ld_deref_de_a(),
             (0b00, 0b011, 0b010) => self.ld_a_deref_de(),
+            (0b00, 0b100, 0b010) => self.ld_deref_hli_a(),
             (0b00, 0b101, 0b010) => self.ld_a_deref_hli(),
             (0b00, 0b111, 0b010) => self.ld_a_deref_hld(),
             (0b01, 0b110, 0b110) => self.halt(),
@@ -405,6 +406,11 @@ impl<'a> InstrExecution<'a> {
             .cycle(|cpu| cpu.fetch())
     }
 
+    fn ld_deref_hli_a(&mut self) -> &mut Self {
+        self.cycle(|cpu| cpu.bus_write(cpu.regs.hl(), cpu.regs.a).increment_hl())
+            .cycle(|cpu| cpu.fetch())
+    }
+
     fn read_s(&mut self, s: S) -> &mut Self {
         match s {
             S::M(M::R(r)) => self.micro_op(|cpu| cpu.read_r(r)),
@@ -492,7 +498,7 @@ impl<'a> CpuProxy<'a> {
     }
 
     fn increment_hl(&mut self) -> &mut Self {
-        self.write_hl(self.regs.hl() + 1)
+        self.write_hl(self.regs.hl().wrapping_add(1))
     }
 
     fn decrement_hl(&mut self) -> &mut Self {
