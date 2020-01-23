@@ -307,6 +307,7 @@ impl<'a> InstrExecution<'a> {
             (0b00, 0b000, 0b010) => self.ld_deref_bc_a(),
             (0b00, dest, 0b110) => self.ld(dest.into(), S::N),
             (0b00, 0b001, 0b010) => self.ld_a_deref_bc(),
+            (0b00, 0b010, 0b010) => self.ld_deref_de_a(),
             (0b00, 0b011, 0b010) => self.ld_a_deref_de(),
             (0b00, 0b101, 0b010) => self.ld_a_deref_hli(),
             (0b00, 0b111, 0b010) => self.ld_a_deref_hld(),
@@ -396,6 +397,11 @@ impl<'a> InstrExecution<'a> {
 
     fn ld_deref_bc_a(&mut self) -> &mut Self {
         self.cycle(|cpu| cpu.bus_write(cpu.regs.bc(), cpu.regs.a))
+            .cycle(|cpu| cpu.fetch())
+    }
+
+    fn ld_deref_de_a(&mut self) -> &mut Self {
+        self.cycle(|cpu| cpu.bus_write(cpu.regs.de(), cpu.regs.a))
             .cycle(|cpu| cpu.fetch())
     }
 

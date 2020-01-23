@@ -599,3 +599,17 @@ fn ld_deref_bc_a() {
         ],
     )
 }
+
+#[test]
+fn ld_deref_de_a() {
+    let mut cpu = Cpu::default();
+    cpu.regs.d = 0x02;
+    cpu.regs.e = 0x05;
+    cpu.test_simple_instr(
+        &[0b00_010_010],
+        &[
+            (Input::with_data(None), Some(BusOp::Write(0x0205, 0x00))),
+            (Input::with_data(None), None),
+        ],
+    )
+}
