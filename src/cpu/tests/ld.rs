@@ -432,3 +432,19 @@ fn ld_deref_hl_n() {
 fn encode_ld_deref_hl_n(n: u8) -> Vec<u8> {
     vec![0b00_110_110, n]
 }
+
+#[test]
+fn ld_a_deref_bc() {
+    let mut cpu = Cpu::default();
+    cpu.regs.b = 0x12;
+    cpu.regs.c = 0x34;
+    let value = 0x42;
+    cpu.test_simple_instr(
+        &[0b00_001_010],
+        &[
+            (Input::with_data(None), Some(BusOp::Read(0x1234))),
+            (Input::with_data(Some(value)), None),
+        ],
+    );
+    assert_eq!(cpu.regs.a, value)
+}
