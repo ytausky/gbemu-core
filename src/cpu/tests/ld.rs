@@ -479,3 +479,18 @@ fn ld_a_deref_c() {
     );
     assert_eq!(cpu.regs.a, value)
 }
+
+#[test]
+fn ld_deref_c_a() {
+    let mut cpu = Cpu::default();
+    let value = 0x42;
+    cpu.regs.a = value;
+    cpu.regs.c = 0x9f;
+    cpu.test_simple_instr(
+        &[0b11_100_010],
+        &[
+            (Input::with_data(None), Some(BusOp::Write(0xff9f, value))),
+            (Input::with_data(None), None),
+        ],
+    )
+}
