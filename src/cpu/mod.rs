@@ -280,6 +280,7 @@ impl<'a> InstrExecution<'a> {
     fn exec_instr(mut self) -> (Option<ModeTransition>, CpuOutput) {
         match self.state.opcode.split() {
             (0b00, 0b000, 0b000) => self.nop(),
+            (0b00, dest, 0b110) => self.ld(dest.into(), S::N),
             (0b01, 0b110, 0b110) => self.halt(),
             (0b01, dest, src) => self.ld(dest.into(), S::M(src.into())),
             (0b10, op, src) => self.alu_op(op.into(), S::M(src.into())),
