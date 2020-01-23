@@ -258,6 +258,52 @@ fn encode_ld_r_r(dest: R, src: R) -> Vec<u8> {
 }
 
 #[test]
+fn ld_a_n() {
+    test_ld_r_n(R::A)
+}
+
+#[test]
+fn ld_b_n() {
+    test_ld_r_n(R::B)
+}
+
+#[test]
+fn ld_c_n() {
+    test_ld_r_n(R::C)
+}
+
+#[test]
+fn ld_d_n() {
+    test_ld_r_n(R::D)
+}
+
+#[test]
+fn ld_e_n() {
+    test_ld_r_n(R::E)
+}
+
+#[test]
+fn ld_h_n() {
+    test_ld_r_n(R::H)
+}
+
+#[test]
+fn ld_l_n() {
+    test_ld_r_n(R::L)
+}
+
+fn test_ld_r_n(r: R) {
+    let mut cpu = Cpu::default();
+    let n = 0x42;
+    cpu.test_simple_instr(&encode_ld_r_n(r, n), &[]);
+    assert_eq!(*cpu.regs.reg(r), n)
+}
+
+fn encode_ld_r_n(r: R, n: u8) -> Vec<u8> {
+    vec![0b00_000_110 | r.code() << 3, n]
+}
+
+#[test]
 fn ld_a_deref_hl() {
     test_ld_r_deref_hl(R::A)
 }
@@ -366,52 +412,6 @@ fn test_ld_deref_hl_r(src: R) {
 
 fn encode_ld_deref_hl_r(src: R) -> Vec<u8> {
     vec![0b01_110_000 | src.code()]
-}
-
-#[test]
-fn ld_a_n() {
-    test_ld_r_n(R::A)
-}
-
-#[test]
-fn ld_b_n() {
-    test_ld_r_n(R::B)
-}
-
-#[test]
-fn ld_c_n() {
-    test_ld_r_n(R::C)
-}
-
-#[test]
-fn ld_d_n() {
-    test_ld_r_n(R::D)
-}
-
-#[test]
-fn ld_e_n() {
-    test_ld_r_n(R::E)
-}
-
-#[test]
-fn ld_h_n() {
-    test_ld_r_n(R::H)
-}
-
-#[test]
-fn ld_l_n() {
-    test_ld_r_n(R::L)
-}
-
-fn test_ld_r_n(r: R) {
-    let mut cpu = Cpu::default();
-    let n = 0x42;
-    cpu.test_simple_instr(&encode_ld_r_n(r, n), &[]);
-    assert_eq!(*cpu.regs.reg(r), n)
-}
-
-fn encode_ld_r_n(r: R, n: u8) -> Vec<u8> {
-    vec![0b00_000_110 | r.code() << 3, n]
 }
 
 #[test]
