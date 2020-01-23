@@ -248,9 +248,9 @@ fn ld_l_l() {
 fn test_ld_r_r(dest: R, src: R) {
     let mut cpu = Cpu::default();
     let data = 0x42;
-    *cpu.regs.reg(src) = data;
+    *cpu.regs.select_r_mut(src) = data;
     cpu.test_simple_instr(&encode_ld_r_r(dest, src), &[]);
-    assert_eq!(*cpu.regs.reg(dest), data)
+    assert_eq!(*cpu.regs.select_r(dest), data)
 }
 
 fn encode_ld_r_r(dest: R, src: R) -> Vec<u8> {
@@ -296,7 +296,7 @@ fn test_ld_r_n(r: R) {
     let mut cpu = Cpu::default();
     let n = 0x42;
     cpu.test_simple_instr(&encode_ld_r_n(r, n), &[]);
-    assert_eq!(*cpu.regs.reg(r), n)
+    assert_eq!(*cpu.regs.select_r(r), n)
 }
 
 fn encode_ld_r_n(r: R, n: u8) -> Vec<u8> {
@@ -350,7 +350,7 @@ fn test_ld_r_deref_hl(dest: R) {
             (Input::with_data(Some(data)), None),
         ],
     );
-    assert_eq!(*cpu.regs.reg(dest), data)
+    assert_eq!(*cpu.regs.select_r(dest), data)
 }
 
 fn encode_ld_r_deref_hl(dest: R) -> Vec<u8> {
@@ -397,7 +397,7 @@ fn test_ld_deref_hl_r(src: R) {
     let data = 0x42;
     cpu.regs.h = 0x12;
     cpu.regs.l = 0x34;
-    *cpu.regs.reg(src) = data;
+    *cpu.regs.select_r_mut(src) = data;
     cpu.test_simple_instr(
         &encode_ld_deref_hl_r(src),
         &[

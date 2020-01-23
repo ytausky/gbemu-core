@@ -204,7 +204,7 @@ impl Regs {
         }
     }
 
-    fn reg(&mut self, r: R) -> &mut u8 {
+    fn select_r_mut(&mut self, r: R) -> &mut u8 {
         match r {
             R::A => &mut self.a,
             R::B => &mut self.b,
@@ -470,11 +470,11 @@ impl<'a> CpuProxy<'a> {
     }
 
     fn read_r(&mut self, r: R) -> &mut Self {
-        self.on_tick(|cpu| *cpu.data_buffer = *cpu.regs.reg(r))
+        self.on_tick(|cpu| *cpu.data_buffer = *cpu.regs.select_r(r))
     }
 
     fn write_r(&mut self, r: R) -> &mut Self {
-        self.on_tock(|cpu| *cpu.regs.reg(r) = *cpu.data_buffer)
+        self.on_tock(|cpu| *cpu.regs.select_r_mut(r) = *cpu.data_buffer)
     }
 
     fn alu_op(&mut self, op: AluOp) -> &mut Self {
