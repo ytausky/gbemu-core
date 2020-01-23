@@ -312,6 +312,7 @@ impl<'a> InstrExecution<'a> {
             (0b10, op, src) => self.alu_op(op.into(), S::M(src.into())),
             (0b11, op, 0b110) => self.alu_op(op.into(), S::N),
             (0b11, 0b001, 0b001) => self.ret(),
+            (0b11, 0b110, 0b010) => self.ld_a_deref_c(),
             _ => unimplemented!(),
         };
         (self.mode_transition, self.output.unwrap())
@@ -336,6 +337,11 @@ impl<'a> InstrExecution<'a> {
 
     fn ld_a_deref_de(&mut self) -> &mut Self {
         self.cycle(|cpu| cpu.bus_read(cpu.regs.de()).write_r(R::A))
+            .cycle(|cpu| cpu.fetch())
+    }
+
+    fn ld_a_deref_c(&mut self) -> &mut Self {
+        self.cycle(|cpu| cpu.bus_read(0xff00 + u16::from(cpu.regs.c)).write_r(R::A))
             .cycle(|cpu| cpu.fetch())
     }
 
