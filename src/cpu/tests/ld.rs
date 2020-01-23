@@ -413,3 +413,22 @@ fn test_ld_r_n(r: R) {
 fn encode_ld_r_n(r: R, n: u8) -> Vec<u8> {
     vec![0b00_000_110 | r.code() << 3, n]
 }
+
+#[test]
+fn ld_deref_hl_n() {
+    let mut cpu = Cpu::default();
+    cpu.regs.h = 0x12;
+    cpu.regs.l = 0x34;
+    let n = 0x42;
+    cpu.test_simple_instr(
+        &encode_ld_deref_hl_n(n),
+        &[
+            (Input::with_data(None), Some(BusOp::Write(0x1234, n))),
+            (Input::with_data(None), None),
+        ],
+    )
+}
+
+fn encode_ld_deref_hl_n(n: u8) -> Vec<u8> {
+    vec![0b00_110_110, n]
+}
