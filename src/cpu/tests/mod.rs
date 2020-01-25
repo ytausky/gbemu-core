@@ -17,6 +17,17 @@ impl R {
     }
 }
 
+impl Dd {
+    fn encode(self) -> u8 {
+        match self {
+            Dd::Bc => 0b00,
+            Dd::De => 0b01,
+            Dd::Hl => 0b10,
+            Dd::Sp => 0b11,
+        }
+    }
+}
+
 #[test]
 fn ret() {
     let mut cpu = Cpu::default();

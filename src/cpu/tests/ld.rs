@@ -645,3 +645,39 @@ fn ld_deref_hld_a() {
     );
     assert_eq!(cpu.regs.hl(), 0x3fff)
 }
+
+#[test]
+fn ld_bc_nn() {
+    let mut cpu = Cpu::default();
+    cpu.test_simple_instr(&encode_ld_dd_nn(Dd::Bc, 0x3a5b), &[]);
+    assert_eq!(cpu.regs.bc(), 0x3a5b)
+}
+
+#[test]
+fn ld_de_nn() {
+    let mut cpu = Cpu::default();
+    cpu.test_simple_instr(&encode_ld_dd_nn(Dd::De, 0x3a5b), &[]);
+    assert_eq!(cpu.regs.de(), 0x3a5b)
+}
+
+#[test]
+fn ld_hl_nn() {
+    let mut cpu = Cpu::default();
+    cpu.test_simple_instr(&encode_ld_dd_nn(Dd::Hl, 0x3a5b), &[]);
+    assert_eq!(cpu.regs.hl(), 0x3a5b)
+}
+
+#[test]
+fn ld_sp_nn() {
+    let mut cpu = Cpu::default();
+    cpu.test_simple_instr(&encode_ld_dd_nn(Dd::Sp, 0x3a5b), &[]);
+    assert_eq!(cpu.regs.sp, 0x3a5b)
+}
+
+fn encode_ld_dd_nn(dd: Dd, nn: u16) -> Vec<u8> {
+    vec![
+        0b00_000_001 | dd.encode() << 4,
+        (nn & 0x00ff) as u8,
+        (nn >> 8) as u8,
+    ]
+}

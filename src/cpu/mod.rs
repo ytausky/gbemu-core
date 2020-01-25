@@ -83,6 +83,13 @@ enum R {
     L,
 }
 
+enum Dd {
+    Bc,
+    De,
+    Hl,
+    Sp,
+}
+
 impl From<u8> for M {
     fn from(encoding: u8) -> Self {
         match encoding {
@@ -94,6 +101,18 @@ impl From<u8> for M {
             0b101 => M::R(R::L),
             0b110 => M::DerefHl,
             0b111 => M::R(R::A),
+            _ => panic!(),
+        }
+    }
+}
+
+impl From<u8> for Dd {
+    fn from(encoding: u8) -> Self {
+        match encoding {
+            0b00 => Dd::Bc,
+            0b01 => Dd::De,
+            0b10 => Dd::Hl,
+            0b11 => Dd::Sp,
             _ => panic!(),
         }
     }
@@ -304,6 +323,7 @@ impl<'a> InstrExecution<'a> {
     fn exec_instr(mut self) -> (Option<ModeTransition>, CpuOutput) {
         match self.state.opcode.split() {
             (0b00, 0b000, 0b000) => self.nop(),
+            (0b00, dest, 0b001) if dest & 0b001 == 0 => self.ld_dd_nn((dest >> 1).into()),
             (0b00, 0b000, 0b010) => self.ld_deref_bc_a(),
             (0b00, dest, 0b110) => self.ld(dest.into(), S::N),
             (0b00, 0b001, 0b010) => self.ld_a_deref_bc(),
@@ -417,6 +437,12 @@ impl<'a> InstrExecution<'a> {
             .cycle(|cpu| cpu.fetch())
     }
 
+    fn ld_dd_nn(&mut self, dd: Dd) -> &mut Self {
+        self.cycle(|cpu| cpu.read_immediate().write_addr_l())
+            .cycle(|cpu| cpu.read_immediate().write_addr_h())
+            .cycle(|cpu| cpu.write_dd(dd, cpu.addr()).fetch())
+    }
+
     fn read_s(&mut self, s: S) -> &mut Self {
         match s {
             S::M(M::R(r)) => self.micro_op(|cpu| cpu.read_r(r)),
@@ -515,6 +541,26 @@ impl<'a> CpuProxy<'a> {
         self.on_tock(|cpu| {
             cpu.regs.h = (addr >> 8) as u8;
             cpu.regs.l = (addr & 0x00ff) as u8;
+        })
+    }
+
+    fn write_dd(&mut self, dd: Dd, addr: u16) -> &mut Self {
+        let h = (addr >> 8) as u8;
+        let l = (addr & 0x00ff) as u8;
+        self.on_tock(|cpu| match dd {
+            Dd::Bc => {
+                cpu.regs.b = h;
+                cpu.regs.c = l;
+            }
+            Dd::De => {
+                cpu.regs.d = h;
+                cpu.regs.e = l;
+            }
+            Dd::Hl => {
+                cpu.regs.h = h;
+                cpu.regs.l = l;
+            }
+            Dd::Sp => cpu.regs.sp = addr,
         })
     }
 
