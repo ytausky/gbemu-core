@@ -287,7 +287,6 @@ impl Regs {
         }
     }
 
-    #[cfg(test)]
     fn write_qq_h(&mut self, qq: Qq, data: u8) {
         match qq {
             Qq::Bc => self.b = data,
@@ -297,7 +296,6 @@ impl Regs {
         }
     }
 
-    #[cfg(test)]
     fn write_qq_l(&mut self, qq: Qq, data: u8) {
         match qq {
             Qq::Bc => self.c = data,
@@ -424,7 +422,8 @@ impl<'a> InstrExecution<'a> {
             (0b01, 0b110, 0b110) => self.halt(),
             (0b01, dest, src) => self.ld(dest.into(), S::M(src.into())),
             (0b10, op, src) => self.alu_op(op.into(), S::M(src.into())),
-            (0b11, dest, 0b101) if dest & 0b001 == 0 => self.push_qq((dest >> 1).into()),
+            (0b11, dest, 0b001) if dest & 0b001 == 0 => self.pop_qq((dest >> 1).into()),
+            (0b11, src, 0b101) if src & 0b001 == 0 => self.push_qq((src >> 1).into()),
             (0b11, op, 0b110) => self.alu_op(op.into(), S::N),
             (0b11, 0b001, 0b001) => self.ret(),
             (0b11, 0b100, 0b000) => self.ld_deref_n_a(),
@@ -548,6 +547,12 @@ impl<'a> InstrExecution<'a> {
             .cycle(|cpu| cpu.fetch())
     }
 
+    fn pop_qq(&mut self, qq: Qq) -> &mut Self {
+        self.cycle(|cpu| cpu.bus_read(cpu.regs.sp).write_qq_l(qq).increment_sp())
+            .cycle(|cpu| cpu.bus_read(cpu.regs.sp).write_qq_h(qq).increment_sp())
+            .cycle(|cpu| cpu.fetch())
+    }
+
     fn read_s(&mut self, s: S) -> &mut Self {
         match s {
             S::M(M::R(r)) => self.micro_op(|cpu| cpu.read_r(r)),
@@ -664,6 +669,14 @@ impl<'a> CpuProxy<'a> {
             }
             Dd::Sp => cpu.regs.sp = addr,
         })
+    }
+
+    fn write_qq_h(&mut self, qq: Qq) -> &mut Self {
+        self.on_tock(|cpu| cpu.regs.write_qq_h(qq, *cpu.data_buffer))
+    }
+
+    fn write_qq_l(&mut self, qq: Qq) -> &mut Self {
+        self.on_tock(|cpu| cpu.regs.write_qq_l(qq, *cpu.data_buffer))
     }
 
     fn increment_pc(&mut self) -> &mut Self {

@@ -745,3 +745,44 @@ fn test_push_qq(qq: Qq) {
 fn encode_push_qq(qq: Qq) -> Vec<u8> {
     vec![0b11_000_101 | qq.encode() << 4]
 }
+
+#[test]
+fn pop_bc() {
+    test_pop_qq(Qq::Bc)
+}
+
+#[test]
+fn pop_de() {
+    test_pop_qq(Qq::De)
+}
+
+#[test]
+fn pop_hl() {
+    test_pop_qq(Qq::Hl)
+}
+
+#[test]
+fn pop_af() {
+    test_pop_qq(Qq::Af)
+}
+
+fn test_pop_qq(qq: Qq) {
+    let mut cpu = Cpu::default();
+    cpu.regs.sp = 0xfffc;
+    cpu.test_simple_instr(
+        &encode_pop_qq(qq),
+        &[
+            (Input::with_data(None), Some(BusOp::Read(0xfffc))),
+            (Input::with_data(Some(0x50)), None),
+            (Input::with_data(None), Some(BusOp::Read(0xfffd))),
+            (Input::with_data(Some(0x3c)), None),
+        ],
+    );
+    assert_eq!(cpu.regs.read_qq_h(qq), 0x3c);
+    assert_eq!(cpu.regs.read_qq_l(qq), 0x50);
+    assert_eq!(cpu.regs.sp, 0xfffe)
+}
+
+fn encode_pop_qq(qq: Qq) -> Vec<u8> {
+    vec![0b11_000_001 | qq.encode() << 4]
+}
