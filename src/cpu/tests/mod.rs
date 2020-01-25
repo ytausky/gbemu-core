@@ -28,6 +28,17 @@ impl Dd {
     }
 }
 
+impl Qq {
+    fn encode(self) -> u8 {
+        match self {
+            Qq::Bc => 0b00,
+            Qq::De => 0b01,
+            Qq::Hl => 0b10,
+            Qq::Af => 0b11,
+        }
+    }
+}
+
 #[test]
 fn ret() {
     let mut cpu = Cpu::default();

@@ -696,3 +696,52 @@ fn ld_sp_hl() {
     );
     assert_eq!(cpu.regs.sp, 0x1234)
 }
+
+#[test]
+fn push_bc() {
+    test_push_qq(Qq::Bc)
+}
+
+#[test]
+fn push_de() {
+    test_push_qq(Qq::De)
+}
+
+#[test]
+fn push_hl() {
+    test_push_qq(Qq::Hl)
+}
+
+#[test]
+fn push_af() {
+    test_push_qq(Qq::Af)
+}
+
+fn test_push_qq(qq: Qq) {
+    let mut cpu = Cpu::default();
+    cpu.regs.write_qq_h(qq, 0x12);
+    cpu.regs.write_qq_l(qq, 0x34);
+    cpu.regs.sp = 0xfffe;
+    cpu.test_simple_instr(
+        &encode_push_qq(qq),
+        &[
+            (Input::with_data(None), None),
+            (Input::with_data(None), None),
+            (
+                Input::with_data(None),
+                Some(BusOp::Write(0xfffd, cpu.regs.read_qq_h(qq))),
+            ),
+            (Input::with_data(None), None),
+            (
+                Input::with_data(None),
+                Some(BusOp::Write(0xfffc, cpu.regs.read_qq_l(qq))),
+            ),
+            (Input::with_data(None), None),
+        ],
+    );
+    assert_eq!(cpu.regs.sp, 0xfffc)
+}
+
+fn encode_push_qq(qq: Qq) -> Vec<u8> {
+    vec![0b11_000_101 | qq.encode() << 4]
+}

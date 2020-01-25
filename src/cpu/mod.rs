@@ -83,11 +83,20 @@ enum R {
     L,
 }
 
+#[derive(Clone, Copy)]
 enum Dd {
     Bc,
     De,
     Hl,
     Sp,
+}
+
+#[derive(Clone, Copy)]
+enum Qq {
+    Bc,
+    De,
+    Hl,
+    Af,
 }
 
 impl From<u8> for M {
@@ -113,6 +122,18 @@ impl From<u8> for Dd {
             0b01 => Dd::De,
             0b10 => Dd::Hl,
             0b11 => Dd::Sp,
+            _ => panic!(),
+        }
+    }
+}
+
+impl From<u8> for Qq {
+    fn from(encoding: u8) -> Self {
+        match encoding {
+            0b00 => Qq::Bc,
+            0b01 => Qq::De,
+            0b10 => Qq::Hl,
+            0b11 => Qq::Af,
             _ => panic!(),
         }
     }
@@ -215,6 +236,15 @@ impl Regs {
         (u16::from(*self.select_r(h)) << 8) + u16::from(*self.select_r(l))
     }
 
+    fn read_dd(&self, dd: Dd) -> u16 {
+        match dd {
+            Dd::Bc => self.bc(),
+            Dd::De => self.de(),
+            Dd::Hl => self.hl(),
+            Dd::Sp => self.sp,
+        }
+    }
+
     fn select_r(&self, r: R) -> &u8 {
         match r {
             R::A => &self.a,
@@ -236,6 +266,64 @@ impl Regs {
             R::E => &mut self.e,
             R::H => &mut self.h,
             R::L => &mut self.l,
+        }
+    }
+
+    fn read_qq_h(&self, qq: Qq) -> u8 {
+        match qq {
+            Qq::Bc => self.b,
+            Qq::De => self.d,
+            Qq::Hl => self.h,
+            Qq::Af => self.a,
+        }
+    }
+
+    fn read_qq_l(&self, qq: Qq) -> u8 {
+        match qq {
+            Qq::Bc => self.c,
+            Qq::De => self.e,
+            Qq::Hl => self.l,
+            Qq::Af => (&self.f).into(),
+        }
+    }
+
+    #[cfg(test)]
+    fn write_qq_h(&mut self, qq: Qq, data: u8) {
+        match qq {
+            Qq::Bc => self.b = data,
+            Qq::De => self.d = data,
+            Qq::Hl => self.h = data,
+            Qq::Af => self.a = data,
+        }
+    }
+
+    #[cfg(test)]
+    fn write_qq_l(&mut self, qq: Qq, data: u8) {
+        match qq {
+            Qq::Bc => self.c = data,
+            Qq::De => self.e = data,
+            Qq::Hl => self.l = data,
+            Qq::Af => self.f = data.into(),
+        }
+    }
+}
+
+impl From<&Flags> for u8 {
+    fn from(flags: &Flags) -> Self {
+        (if flags.z { 0x80 } else { 0x00 })
+            | if flags.n { 0x40 } else { 0x00 }
+            | if flags.h { 0x20 } else { 0x00 }
+            | if flags.cy { 0x10 } else { 0x00 }
+    }
+}
+
+impl From<u8> for Flags {
+    fn from(flags: u8) -> Self {
+        Flags {
+            z: flags & 0x80 > 0,
+            n: flags & 0x40 > 0,
+            h: flags & 0x20 > 0,
+            cy: flags & 0x10 > 0,
         }
     }
 }
@@ -336,6 +424,7 @@ impl<'a> InstrExecution<'a> {
             (0b01, 0b110, 0b110) => self.halt(),
             (0b01, dest, src) => self.ld(dest.into(), S::M(src.into())),
             (0b10, op, src) => self.alu_op(op.into(), S::M(src.into())),
+            (0b11, dest, 0b101) if dest & 0b001 == 0 => self.push_qq((dest >> 1).into()),
             (0b11, op, 0b110) => self.alu_op(op.into(), S::N),
             (0b11, 0b001, 0b001) => self.ret(),
             (0b11, 0b100, 0b000) => self.ld_deref_n_a(),
@@ -449,6 +538,16 @@ impl<'a> InstrExecution<'a> {
             .cycle(|cpu| cpu.write_dd(Dd::Sp, cpu.regs.hl()).fetch())
     }
 
+    fn push_qq(&mut self, qq: Qq) -> &mut Self {
+        self.cycle(|cpu| cpu.bus_no_op().decrement_dd(Dd::Sp))
+            .cycle(|cpu| {
+                cpu.bus_write(cpu.regs.sp, cpu.regs.read_qq_h(qq))
+                    .decrement_dd(Dd::Sp)
+            })
+            .cycle(|cpu| cpu.bus_write(cpu.regs.sp, cpu.regs.read_qq_l(qq)))
+            .cycle(|cpu| cpu.fetch())
+    }
+
     fn read_s(&mut self, s: S) -> &mut Self {
         match s {
             S::M(M::R(r)) => self.micro_op(|cpu| cpu.read_r(r)),
@@ -541,6 +640,10 @@ impl<'a> CpuProxy<'a> {
 
     fn decrement_hl(&mut self) -> &mut Self {
         self.write_dd(Dd::Hl, self.regs.hl() - 1)
+    }
+
+    fn decrement_dd(&mut self, dd: Dd) -> &mut Self {
+        self.write_dd(dd, self.regs.read_dd(dd) - 1)
     }
 
     fn write_dd(&mut self, dd: Dd, addr: u16) -> &mut Self {
