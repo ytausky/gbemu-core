@@ -343,6 +343,7 @@ impl<'a> InstrExecution<'a> {
             (0b11, 0b101, 0b010) => self.ld_deref_nn_a(),
             (0b11, 0b110, 0b000) => self.ld_a_deref_n(),
             (0b11, 0b110, 0b010) => self.ld_a_deref_c(),
+            (0b11, 0b111, 0b001) => self.ld_sp_hl(),
             (0b11, 0b111, 0b010) => self.ld_a_deref_nn(),
             _ => unimplemented!(),
         };
@@ -441,6 +442,11 @@ impl<'a> InstrExecution<'a> {
         self.cycle(|cpu| cpu.read_immediate().write_addr_l())
             .cycle(|cpu| cpu.read_immediate().write_addr_h())
             .cycle(|cpu| cpu.write_dd(dd, cpu.addr()).fetch())
+    }
+
+    fn ld_sp_hl(&mut self) -> &mut Self {
+        self.cycle(|cpu| cpu.bus_no_op())
+            .cycle(|cpu| cpu.write_dd(Dd::Sp, cpu.regs.hl()).fetch())
     }
 
     fn read_s(&mut self, s: S) -> &mut Self {

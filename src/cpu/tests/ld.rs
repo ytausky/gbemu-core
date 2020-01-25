@@ -681,3 +681,18 @@ fn encode_ld_dd_nn(dd: Dd, nn: u16) -> Vec<u8> {
         (nn >> 8) as u8,
     ]
 }
+
+#[test]
+fn ld_sp_hl() {
+    let mut cpu = Cpu::default();
+    cpu.regs.h = 0x12;
+    cpu.regs.l = 0x34;
+    cpu.test_simple_instr(
+        &[0b11_111_001],
+        &[
+            (Input::with_data(None), None),
+            (Input::with_data(None), None),
+        ],
+    );
+    assert_eq!(cpu.regs.sp, 0x1234)
+}
