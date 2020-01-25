@@ -411,7 +411,7 @@ impl<'a> InstrExecution<'a> {
             (0b00, 0b000, 0b000) => self.nop(),
             (0b00, dest, 0b001) if dest & 0b001 == 0 => self.ld_dd_nn((dest >> 1).into()),
             (0b00, 0b000, 0b010) => self.ld_deref_bc_a(),
-            (0b00, dest, 0b110) => self.ld(dest.into(), S::N),
+            (0b00, dest, 0b110) => self.ld_m_s(dest.into(), S::N),
             (0b00, 0b001, 0b010) => self.ld_a_deref_bc(),
             (0b00, 0b010, 0b010) => self.ld_deref_de_a(),
             (0b00, 0b011, 0b010) => self.ld_a_deref_de(),
@@ -420,7 +420,7 @@ impl<'a> InstrExecution<'a> {
             (0b00, 0b110, 0b010) => self.ld_deref_hld_a(),
             (0b00, 0b111, 0b010) => self.ld_a_deref_hld(),
             (0b01, 0b110, 0b110) => self.halt(),
-            (0b01, dest, src) => self.ld(dest.into(), S::M(src.into())),
+            (0b01, dest, src) => self.ld_m_s(dest.into(), S::M(src.into())),
             (0b10, op, src) => self.alu_op(op.into(), S::M(src.into())),
             (0b11, dest, 0b001) if dest & 0b001 == 0 => self.pop_qq((dest >> 1).into()),
             (0b11, src, 0b101) if src & 0b001 == 0 => self.push_qq((src >> 1).into()),
@@ -446,7 +446,7 @@ impl<'a> InstrExecution<'a> {
         unimplemented!()
     }
 
-    fn ld(&mut self, dest: M, src: S) -> &mut Self {
+    fn ld_m_s(&mut self, dest: M, src: S) -> &mut Self {
         self.read_s(src).write_m(dest).cycle(|cpu| cpu.fetch())
     }
 
