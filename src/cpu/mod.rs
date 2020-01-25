@@ -536,18 +536,11 @@ impl<'a> CpuProxy<'a> {
     }
 
     fn increment_hl(&mut self) -> &mut Self {
-        self.write_hl(self.regs.hl().wrapping_add(1))
+        self.write_dd(Dd::Hl, self.regs.hl().wrapping_add(1))
     }
 
     fn decrement_hl(&mut self) -> &mut Self {
-        self.write_hl(self.regs.hl() - 1)
-    }
-
-    fn write_hl(&mut self, addr: u16) -> &mut Self {
-        self.on_tock(|cpu| {
-            cpu.regs.h = (addr >> 8) as u8;
-            cpu.regs.l = (addr & 0x00ff) as u8;
-        })
+        self.write_dd(Dd::Hl, self.regs.hl() - 1)
     }
 
     fn write_dd(&mut self, dd: Dd, addr: u16) -> &mut Self {
