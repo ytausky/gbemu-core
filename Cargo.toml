@@ -1,5 +1,5 @@
 [package]
-name = "gbemu"
+name = "gbemu-core"
 version = "0.1.0"
 authors = ["Yaron Tausky <ytausky@protonmail.com>"]
 edition = "2018"
