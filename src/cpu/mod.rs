@@ -183,6 +183,7 @@ enum MCycle {
     M3,
     M4,
     M5,
+    M6,
 }
 
 impl MCycle {
@@ -192,7 +193,8 @@ impl MCycle {
             M2 => M3,
             M3 => M4,
             M4 => M5,
-            M5 => panic!(),
+            M5 => M6,
+            M6 => panic!(),
         }
     }
 }
@@ -412,6 +414,7 @@ impl<'a> InstrExecution<'a> {
             (0b00, dest, 0b001) if dest & 0b001 == 0 => self.ld_dd_nn((dest >> 1).into()),
             (0b00, 0b000, 0b010) => self.ld_deref_bc_a(),
             (0b00, dest, 0b110) => self.ld_m_s(dest.into(), S::N),
+            (0b00, 0b001, 0b000) => self.ld_deref_nn_sp(),
             (0b00, 0b001, 0b010) => self.ld_a_deref_bc(),
             (0b00, 0b010, 0b010) => self.ld_deref_de_a(),
             (0b00, 0b011, 0b010) => self.ld_a_deref_de(),
@@ -573,6 +576,17 @@ impl<'a> InstrExecution<'a> {
             })
     }
 
+    fn ld_deref_nn_sp(&mut self) -> &mut Self {
+        self.cycle(|cpu| cpu.read_immediate().write_addr_l())
+            .cycle(|cpu| cpu.read_immediate().write_addr_h())
+            .cycle(|cpu| {
+                cpu.bus_write(cpu.addr(), low_byte(cpu.regs.sp))
+                    .increment_addr()
+            })
+            .cycle(|cpu| cpu.bus_write(cpu.addr(), high_byte(cpu.regs.sp)))
+            .cycle(|cpu| cpu.fetch())
+    }
+
     fn read_s(&mut self, s: S) -> &mut Self {
         match s {
             S::M(M::R(r)) => self.micro_op(|cpu| cpu.read_r(r)),
@@ -713,6 +727,14 @@ impl<'a> CpuProxy<'a> {
 
     fn increment_sp(&mut self) -> &mut Self {
         self.on_tock(|cpu| cpu.regs.sp += 1)
+    }
+
+    fn increment_addr(&mut self) -> &mut Self {
+        self.on_tock(|cpu| {
+            let addr = cpu.addr() + 1;
+            *cpu.addr_l = low_byte(addr);
+            *cpu.addr_h = high_byte(addr);
+        })
     }
 
     fn write_addr_h(&mut self) -> &mut Self {

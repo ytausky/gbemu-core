@@ -864,3 +864,28 @@ fn ldhl_sp_e_sets_cy() {
 fn encode_ldhl_sp_e(e: i8) -> Vec<u8> {
     vec![0b11_111_000, e as u8]
 }
+
+#[test]
+fn ld_deref_nn_sp() {
+    let mut cpu = Cpu::default();
+    cpu.regs.sp = 0xfff8;
+    cpu.test_simple_instr(
+        &encode_ld_deref_nn_sp(0xc100),
+        &[
+            (
+                Input::with_data(None),
+                Some(BusOp::Write(0xc100, low_byte(cpu.regs.sp))),
+            ),
+            (Input::with_data(None), None),
+            (
+                Input::with_data(None),
+                Some(BusOp::Write(0xc101, high_byte(cpu.regs.sp))),
+            ),
+            (Input::with_data(None), None),
+        ],
+    )
+}
+
+fn encode_ld_deref_nn_sp(nn: u16) -> Vec<u8> {
+    vec![0b00_001_000, low_byte(nn), high_byte(nn)]
+}
