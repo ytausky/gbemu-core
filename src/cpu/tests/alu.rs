@@ -427,3 +427,20 @@ fn test_inc_r(r: R) {
 fn encode_inc_r(r: R) -> Vec<u8> {
     vec![0b00_000_100 | r.code() << 3]
 }
+
+#[test]
+fn inc_deref_hl() {
+    let mut cpu = Cpu::default();
+    cpu.regs.h = 0x12;
+    cpu.regs.l = 0x34;
+    cpu.test_simple_instr(
+        &[0b00_110_100],
+        &[
+            (Input::with_data(None), Some(BusOp::Read(0x1234))),
+            (Input::with_data(Some(0x01)), None),
+            (Input::with_data(None), Some(BusOp::Write(0x1234, 0x02))),
+            (Input::with_data(None), None),
+        ],
+    );
+    assert_eq!(cpu.regs.f, flags!())
+}

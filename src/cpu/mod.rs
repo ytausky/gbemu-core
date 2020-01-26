@@ -499,7 +499,9 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ld_m_s(&mut self, dest: M, src: S) -> &mut Self {
-        self.read_s(src).write_m(dest).cycle(|cpu| cpu.fetch())
+        self.read_s(src, |cpu| cpu)
+            .write_m(dest)
+            .cycle(|cpu| cpu.fetch())
     }
 
     fn ld_a_deref_bc(&mut self) -> &mut Self {
@@ -636,7 +638,7 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn alu_op(&mut self, op: AluOp, rhs: S) -> &mut Self {
-        self.read_s(rhs)
+        self.read_s(rhs, |cpu| cpu)
             .micro_op(|cpu| {
                 cpu.alu_op(op, cpu.regs.a, *cpu.data);
                 cpu.write_r(R::A, cpu.alu_result);
@@ -646,14 +648,13 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn inc_m(&mut self, m: M) -> &mut Self {
-        self.read_s(S::M(m))
-            .micro_op(|cpu| {
-                cpu.alu_op(AluOp::Add, *cpu.data, 0x01);
-                *cpu.data = cpu.alu_result;
-                cpu.write_f(flags!(z, n, h))
-            })
-            .write_m(m)
-            .cycle(|cpu| cpu.fetch())
+        self.read_s(S::M(m), |cpu| {
+            cpu.alu_op(AluOp::Add, *cpu.data, 0x01);
+            cpu.on_tock(|cpu| *cpu.data = cpu.alu_result);
+            cpu.write_f(flags!(z, n, h))
+        })
+        .write_m(m)
+        .cycle(|cpu| cpu.fetch())
     }
 
     fn ret(&mut self) -> &mut Self {
@@ -663,11 +664,14 @@ impl<'a> InstrExecution<'a> {
             .cycle(|cpu| cpu.fetch())
     }
 
-    fn read_s(&mut self, s: S) -> &mut Self {
+    fn read_s<F>(&mut self, s: S, f: F) -> &mut Self
+    where
+        F: for<'r, 's> FnOnce(&'s mut CpuProxy<'r>) -> &'s mut CpuProxy<'r>,
+    {
         match s {
-            S::M(M::R(r)) => self.micro_op(|cpu| cpu.read_r(r)),
-            S::M(M::DerefHl) => self.cycle(|cpu| cpu.bus_read(cpu.regs.hl())),
-            S::N => self.cycle(|cpu| cpu.read_immediate()),
+            S::M(M::R(r)) => self.micro_op(|cpu| f(cpu.read_r(r))),
+            S::M(M::DerefHl) => self.cycle(|cpu| f(cpu.bus_read(cpu.regs.hl()))),
+            S::N => self.cycle(|cpu| f(cpu.read_immediate())),
         }
     }
 
