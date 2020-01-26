@@ -55,7 +55,7 @@ enum Mode {
 struct ComplexInstrExecState {
     opcode: Opcode,
     m_cycle: MCycle,
-    data_buffer: u8,
+    data: u8,
     addr_h: u8,
     addr_l: u8,
 }
@@ -212,7 +212,7 @@ impl Default for ComplexInstrExecState {
         Self {
             opcode: Opcode(0x00),
             m_cycle: M1,
-            data_buffer: 0xff,
+            data: 0xff,
             addr_h: 0xff,
             addr_l: 0xff,
         }
@@ -358,7 +358,7 @@ impl From<ModeTransition> for Mode {
             ModeTransition::Run(opcode) => Mode::Run(ComplexInstrExecState {
                 opcode,
                 m_cycle: M1,
-                data_buffer: 0xff,
+                data: 0xff,
                 addr_h: 0xff,
                 addr_l: 0xff,
             }),
@@ -431,6 +431,7 @@ impl<'a> InstrExecution<'a> {
             (0b11, 0b101, 0b010) => self.ld_deref_nn_a(),
             (0b11, 0b110, 0b000) => self.ld_a_deref_n(),
             (0b11, 0b110, 0b010) => self.ld_a_deref_c(),
+            (0b11, 0b111, 0b000) => self.ldhl_sp_e(),
             (0b11, 0b111, 0b001) => self.ld_sp_hl(),
             (0b11, 0b111, 0b010) => self.ld_a_deref_nn(),
             _ => unimplemented!(),
@@ -451,18 +452,18 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ld_a_deref_bc(&mut self) -> &mut Self {
-        self.cycle(|cpu| cpu.bus_read(cpu.regs.bc()).write_r(R::A))
-            .cycle(|cpu| cpu.fetch())
+        self.cycle(|cpu| cpu.bus_read(cpu.regs.bc()))
+            .cycle(|cpu| cpu.write_r(R::A, *cpu.data).fetch())
     }
 
     fn ld_a_deref_de(&mut self) -> &mut Self {
-        self.cycle(|cpu| cpu.bus_read(cpu.regs.de()).write_r(R::A))
-            .cycle(|cpu| cpu.fetch())
+        self.cycle(|cpu| cpu.bus_read(cpu.regs.de()))
+            .cycle(|cpu| cpu.write_r(R::A, *cpu.data).fetch())
     }
 
     fn ld_a_deref_c(&mut self) -> &mut Self {
-        self.cycle(|cpu| cpu.bus_read(0xff00 | u16::from(cpu.regs.c)).write_r(R::A))
-            .cycle(|cpu| cpu.fetch())
+        self.cycle(|cpu| cpu.bus_read(0xff00 | u16::from(cpu.regs.c)))
+            .cycle(|cpu| cpu.write_r(R::A, *cpu.data).fetch())
     }
 
     fn ld_deref_c_a(&mut self) -> &mut Self {
@@ -472,21 +473,21 @@ impl<'a> InstrExecution<'a> {
 
     fn ld_a_deref_n(&mut self) -> &mut Self {
         self.cycle(|cpu| cpu.read_immediate())
-            .cycle(|cpu| cpu.bus_read(0xff00 | u16::from(*cpu.data_buffer)))
-            .cycle(|cpu| cpu.write_r(R::A).fetch())
+            .cycle(|cpu| cpu.bus_read(0xff00 | u16::from(*cpu.data)))
+            .cycle(|cpu| cpu.write_r(R::A, *cpu.data).fetch())
     }
 
     fn ld_deref_n_a(&mut self) -> &mut Self {
         self.cycle(|cpu| cpu.read_immediate())
-            .cycle(|cpu| cpu.bus_write(0xff00 | u16::from(*cpu.data_buffer), cpu.regs.a))
-            .cycle(|cpu| cpu.write_r(R::A).fetch())
+            .cycle(|cpu| cpu.bus_write(0xff00 | u16::from(*cpu.data), cpu.regs.a))
+            .cycle(|cpu| cpu.write_r(R::A, *cpu.data).fetch())
     }
 
     fn ld_a_deref_nn(&mut self) -> &mut Self {
         self.cycle(|cpu| cpu.read_immediate().write_addr_l())
             .cycle(|cpu| cpu.read_immediate().write_addr_h())
-            .cycle(|cpu| cpu.bus_read(cpu.addr()).write_r(R::A))
-            .cycle(|cpu| cpu.fetch())
+            .cycle(|cpu| cpu.bus_read(cpu.addr()))
+            .cycle(|cpu| cpu.write_r(R::A, *cpu.data).fetch())
     }
 
     fn ld_deref_nn_a(&mut self) -> &mut Self {
@@ -497,13 +498,13 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ld_a_deref_hli(&mut self) -> &mut Self {
-        self.cycle(|cpu| cpu.bus_read(cpu.regs.hl()).increment_hl().write_r(R::A))
-            .cycle(|cpu| cpu.fetch())
+        self.cycle(|cpu| cpu.bus_read(cpu.regs.hl()).increment_hl())
+            .cycle(|cpu| cpu.write_r(R::A, *cpu.data).fetch())
     }
 
     fn ld_a_deref_hld(&mut self) -> &mut Self {
-        self.cycle(|cpu| cpu.bus_read(cpu.regs.hl()).decrement_hl().write_r(R::A))
-            .cycle(|cpu| cpu.fetch())
+        self.cycle(|cpu| cpu.bus_read(cpu.regs.hl()).decrement_hl())
+            .cycle(|cpu| cpu.write_r(R::A, *cpu.data).fetch())
     }
 
     fn ld_deref_bc_a(&mut self) -> &mut Self {
@@ -553,6 +554,25 @@ impl<'a> InstrExecution<'a> {
             .cycle(|cpu| cpu.fetch())
     }
 
+    fn ldhl_sp_e(&mut self) -> &mut Self {
+        self.cycle(|cpu| cpu.read_immediate())
+            .cycle(|cpu| {
+                let cpu = cpu.alu_op(AluOp::Add, low_byte(cpu.regs.sp), *cpu.data);
+                cpu.write_r(R::L, cpu.alu_result)
+                    .on_tock(|cpu| cpu.alu_flags.z = false)
+                    .write_f()
+                    .bus_no_op()
+            })
+            .cycle(|cpu| {
+                let cpu = cpu.alu_op(
+                    AluOp::Adc,
+                    high_byte(cpu.regs.sp),
+                    sign_extension(*cpu.data),
+                );
+                cpu.write_r(R::H, cpu.alu_result).fetch()
+            })
+    }
+
     fn read_s(&mut self, s: S) -> &mut Self {
         match s {
             S::M(M::R(r)) => self.micro_op(|cpu| cpu.read_r(r)),
@@ -563,14 +583,18 @@ impl<'a> InstrExecution<'a> {
 
     fn write_m(&mut self, m: M) -> &mut Self {
         match m {
-            M::R(r) => self.micro_op(|cpu| cpu.write_r(r)),
-            M::DerefHl => self.cycle(|cpu| cpu.bus_write(cpu.regs.hl(), *cpu.data_buffer)),
+            M::R(r) => self.micro_op(|cpu| cpu.write_r(r, *cpu.data)),
+            M::DerefHl => self.cycle(|cpu| cpu.bus_write(cpu.regs.hl(), *cpu.data)),
         }
     }
 
     fn alu_op(&mut self, op: AluOp, rhs: S) -> &mut Self {
         self.read_s(rhs)
-            .micro_op(|cpu| cpu.alu_op(op))
+            .micro_op(|cpu| {
+                cpu.alu_op(op, cpu.regs.a, *cpu.data);
+                cpu.write_r(R::A, cpu.alu_result);
+                cpu.write_f()
+            })
             .cycle(|cpu| cpu.fetch())
     }
 
@@ -612,9 +636,11 @@ impl<'a> InstrExecution<'a> {
     fn cpu_proxy(&mut self) -> CpuProxy {
         CpuProxy {
             regs: self.regs,
-            data_buffer: &mut self.state.data_buffer,
+            data: &mut self.state.data,
             addr_h: &mut self.state.addr_h,
             addr_l: &mut self.state.addr_l,
+            alu_result: 0xff,
+            alu_flags: Default::default(),
             mode_transition: &mut self.mode_transition,
             phase: *self.phase,
             input: self.input,
@@ -625,9 +651,11 @@ impl<'a> InstrExecution<'a> {
 
 struct CpuProxy<'a> {
     regs: &'a mut Regs,
-    data_buffer: &'a mut u8,
+    data: &'a mut u8,
     addr_h: &'a mut u8,
     addr_l: &'a mut u8,
+    alu_result: u8,
+    alu_flags: Flags,
     phase: Phase,
     mode_transition: &'a mut Option<ModeTransition>,
     input: &'a Input,
@@ -652,8 +680,8 @@ impl<'a> CpuProxy<'a> {
     }
 
     fn write_dd(&mut self, dd: Dd, addr: u16) -> &mut Self {
-        let h = (addr >> 8) as u8;
-        let l = (addr & 0x00ff) as u8;
+        let h = high_byte(addr);
+        let l = low_byte(addr);
         self.on_tock(|cpu| match dd {
             Dd::Bc => {
                 cpu.regs.b = h;
@@ -672,11 +700,11 @@ impl<'a> CpuProxy<'a> {
     }
 
     fn write_qq_h(&mut self, qq: Qq) -> &mut Self {
-        self.on_tock(|cpu| cpu.regs.write_qq_h(qq, *cpu.data_buffer))
+        self.on_tock(|cpu| cpu.regs.write_qq_h(qq, *cpu.data))
     }
 
     fn write_qq_l(&mut self, qq: Qq) -> &mut Self {
-        self.on_tock(|cpu| cpu.regs.write_qq_l(qq, *cpu.data_buffer))
+        self.on_tock(|cpu| cpu.regs.write_qq_l(qq, *cpu.data))
     }
 
     fn increment_pc(&mut self) -> &mut Self {
@@ -688,11 +716,11 @@ impl<'a> CpuProxy<'a> {
     }
 
     fn write_addr_h(&mut self) -> &mut Self {
-        self.on_tock(|cpu| *cpu.addr_h = *cpu.data_buffer)
+        self.on_tock(|cpu| *cpu.addr_h = *cpu.data)
     }
 
     fn write_addr_l(&mut self) -> &mut Self {
-        self.on_tock(|cpu| *cpu.addr_l = *cpu.data_buffer)
+        self.on_tock(|cpu| *cpu.addr_l = *cpu.data)
     }
 
     fn write_pc(&mut self) -> &mut Self {
@@ -704,9 +732,7 @@ impl<'a> CpuProxy<'a> {
     }
 
     fn decode(&mut self) -> &mut Self {
-        self.on_tock(|cpu| {
-            *cpu.mode_transition = Some(ModeTransition::Run(Opcode(*cpu.data_buffer)))
-        })
+        self.on_tock(|cpu| *cpu.mode_transition = Some(ModeTransition::Run(Opcode(*cpu.data))))
     }
 
     fn fetch(&mut self) -> &mut Self {
@@ -722,7 +748,7 @@ impl<'a> CpuProxy<'a> {
         self.output = Some(match self.phase {
             Tick => Some(BusOp::Read(addr)),
             Tock => {
-                *self.data_buffer = self.input.data.unwrap();
+                *self.data = self.input.data.unwrap();
                 None
             }
         });
@@ -738,30 +764,34 @@ impl<'a> CpuProxy<'a> {
     }
 
     fn read_r(&mut self, r: R) -> &mut Self {
-        self.on_tick(|cpu| *cpu.data_buffer = *cpu.regs.select_r(r))
+        self.on_tick(|cpu| *cpu.data = *cpu.regs.select_r(r))
     }
 
-    fn write_r(&mut self, r: R) -> &mut Self {
-        self.on_tock(|cpu| *cpu.regs.select_r_mut(r) = *cpu.data_buffer)
+    fn write_r(&mut self, r: R, data: u8) -> &mut Self {
+        self.on_tock(|cpu| *cpu.regs.select_r_mut(r) = data)
     }
 
-    fn alu_op(&mut self, op: AluOp) -> &mut Self {
+    fn write_f(&mut self) -> &mut Self {
+        self.on_tock(|cpu| cpu.regs.f = cpu.alu_flags.clone())
+    }
+
+    fn alu_op(&mut self, op: AluOp, lhs: u8, rhs: u8) -> &mut Self {
         self.on_tock(|cpu| {
             let (result, flags) = match op {
-                AluOp::Add => alu::add(cpu.regs.a, *cpu.data_buffer, false),
-                AluOp::Adc => alu::add(cpu.regs.a, *cpu.data_buffer, cpu.regs.f.cy),
-                AluOp::Sub => alu::sub(cpu.regs.a, *cpu.data_buffer, false),
-                AluOp::Sbc => alu::sub(cpu.regs.a, *cpu.data_buffer, cpu.regs.f.cy),
-                AluOp::And => alu::and(cpu.regs.a, *cpu.data_buffer),
-                AluOp::Xor => alu::xor(cpu.regs.a, *cpu.data_buffer),
-                AluOp::Or => alu::or(cpu.regs.a, *cpu.data_buffer),
+                AluOp::Add => alu::add(lhs, rhs, false),
+                AluOp::Adc => alu::add(lhs, rhs, cpu.regs.f.cy),
+                AluOp::Sub => alu::sub(lhs, rhs, false),
+                AluOp::Sbc => alu::sub(lhs, rhs, cpu.regs.f.cy),
+                AluOp::And => alu::and(lhs, rhs),
+                AluOp::Xor => alu::xor(lhs, rhs),
+                AluOp::Or => alu::or(lhs, rhs),
                 AluOp::Cp => {
-                    let (_, flags) = alu::sub(cpu.regs.a, *cpu.data_buffer, false);
-                    (cpu.regs.a, flags)
+                    let (_, flags) = alu::sub(lhs, rhs, false);
+                    (lhs, flags)
                 }
             };
-            cpu.regs.a = result;
-            cpu.regs.f = flags;
+            cpu.alu_result = result;
+            cpu.alu_flags = flags;
         })
     }
 
@@ -777,6 +807,22 @@ impl<'a> CpuProxy<'a> {
             f(self)
         }
         self
+    }
+}
+
+fn low_byte(addr: u16) -> u8 {
+    (addr & 0x00ff) as u8
+}
+
+fn high_byte(addr: u16) -> u8 {
+    (addr >> 8) as u8
+}
+
+fn sign_extension(data: u8) -> u8 {
+    if data > 0x80 {
+        0xff
+    } else {
+        0x00
     }
 }
 

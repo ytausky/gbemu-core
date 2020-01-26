@@ -786,3 +786,81 @@ fn test_pop_qq(qq: Qq) {
 fn encode_pop_qq(qq: Qq) -> Vec<u8> {
     vec![0b11_000_001 | qq.encode() << 4]
 }
+
+#[test]
+fn ldhl_sp_e() {
+    let mut cpu = Cpu::default();
+    cpu.regs.sp = 0xfff8;
+    cpu.test_simple_instr(
+        &encode_ldhl_sp_e(0x02),
+        &[
+            (Input::with_data(None), None),
+            (Input::with_data(None), None),
+        ],
+    );
+    assert_eq!(cpu.regs.hl(), 0xfffa);
+    assert_eq!(cpu.regs.f, flags!())
+}
+
+#[test]
+fn ldhl_sp_e_with_negative_e() {
+    let mut cpu = Cpu::default();
+    cpu.test_simple_instr(
+        &encode_ldhl_sp_e(-1),
+        &[
+            (Input::with_data(None), None),
+            (Input::with_data(None), None),
+        ],
+    );
+    assert_eq!(cpu.regs.hl(), 0xffff);
+    assert_eq!(cpu.regs.f, flags!())
+}
+
+#[test]
+fn ldhl_sp_e_does_not_set_z() {
+    let mut cpu = Cpu::default();
+    cpu.regs.sp = 0xffff;
+    cpu.test_simple_instr(
+        &encode_ldhl_sp_e(0x01),
+        &[
+            (Input::with_data(None), None),
+            (Input::with_data(None), None),
+        ],
+    );
+    assert_eq!(cpu.regs.hl(), 0x0000);
+    assert_eq!(cpu.regs.f, flags!(h, cy))
+}
+
+#[test]
+fn ldhl_sp_e_sets_h() {
+    let mut cpu = Cpu::default();
+    cpu.regs.sp = 0xffe8;
+    cpu.test_simple_instr(
+        &encode_ldhl_sp_e(0x09),
+        &[
+            (Input::with_data(None), None),
+            (Input::with_data(None), None),
+        ],
+    );
+    assert_eq!(cpu.regs.hl(), 0xfff1);
+    assert_eq!(cpu.regs.f, flags!(h))
+}
+
+#[test]
+fn ldhl_sp_e_sets_cy() {
+    let mut cpu = Cpu::default();
+    cpu.regs.sp = 0xfef1;
+    cpu.test_simple_instr(
+        &encode_ldhl_sp_e(0x10),
+        &[
+            (Input::with_data(None), None),
+            (Input::with_data(None), None),
+        ],
+    );
+    assert_eq!(cpu.regs.hl(), 0xff01);
+    assert_eq!(cpu.regs.f, flags!(cy))
+}
+
+fn encode_ldhl_sp_e(e: i8) -> Vec<u8> {
+    vec![0b11_111_000, e as u8]
+}
