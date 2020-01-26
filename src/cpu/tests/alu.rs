@@ -380,3 +380,50 @@ fn cp_d() {
 fn encode_cp_r(r: R) -> Vec<u8> {
     vec![0b10_111_000 | r.code()]
 }
+
+#[test]
+fn inc_a() {
+    test_inc_r(R::A)
+}
+
+#[test]
+fn inc_b() {
+    test_inc_r(R::B)
+}
+
+#[test]
+fn inc_c() {
+    test_inc_r(R::C)
+}
+
+#[test]
+fn inc_d() {
+    test_inc_r(R::D)
+}
+
+#[test]
+fn inc_e() {
+    test_inc_r(R::E)
+}
+
+#[test]
+fn inc_h() {
+    test_inc_r(R::H)
+}
+
+#[test]
+fn inc_l() {
+    test_inc_r(R::L)
+}
+
+fn test_inc_r(r: R) {
+    let mut cpu = Cpu::default();
+    *cpu.regs.select_r_mut(r) = 0xff;
+    cpu.test_simple_instr(&encode_inc_r(r), &[]);
+    assert_eq!(*cpu.regs.select_r(r), 0x00);
+    assert_eq!(cpu.regs.f, flags!(z, h))
+}
+
+fn encode_inc_r(r: R) -> Vec<u8> {
+    vec![0b00_000_100 | r.code() << 3]
+}

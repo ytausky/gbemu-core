@@ -1,6 +1,7 @@
 use self::{MCycle::*, Phase::*};
 
-#[cfg(test)]
+use std::ops::{BitAnd, BitOr, Not};
+
 macro_rules! flags {
     ($($flag:ident),*) => {
         Flags {
@@ -40,13 +41,59 @@ pub struct Regs {
     pub sp: u16,
 }
 
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Flags {
     pub z: bool,
     pub n: bool,
     pub h: bool,
     pub cy: bool,
 }
+
+impl BitAnd for Flags {
+    type Output = Self;
+
+    fn bitand(self, rhs: Self) -> Self::Output {
+        Flags {
+            z: self.z & rhs.z,
+            n: self.n & rhs.n,
+            h: self.h & rhs.h,
+            cy: self.cy & rhs.cy,
+        }
+    }
+}
+
+impl BitOr for Flags {
+    type Output = Self;
+
+    fn bitor(self, rhs: Self) -> Self::Output {
+        Flags {
+            z: self.z | rhs.z,
+            n: self.n | rhs.n,
+            h: self.h | rhs.h,
+            cy: self.cy | rhs.cy,
+        }
+    }
+}
+
+impl Not for Flags {
+    type Output = Self;
+
+    fn not(self) -> Self::Output {
+        Flags {
+            z: !self.z,
+            n: !self.n,
+            h: !self.h,
+            cy: !self.cy,
+        }
+    }
+}
+
+const ALL_FLAGS: Flags = Flags {
+    z: true,
+    n: true,
+    h: true,
+    cy: true,
+};
 
 enum Mode {
     Run(ComplexInstrExecState),
@@ -413,6 +460,7 @@ impl<'a> InstrExecution<'a> {
             (0b00, 0b000, 0b000) => self.nop(),
             (0b00, dest, 0b001) if dest & 0b001 == 0 => self.ld_dd_nn((dest >> 1).into()),
             (0b00, 0b000, 0b010) => self.ld_deref_bc_a(),
+            (0b00, operand, 0b100) => self.inc_m(operand.into()),
             (0b00, dest, 0b110) => self.ld_m_s(dest.into(), S::N),
             (0b00, 0b001, 0b000) => self.ld_deref_nn_sp(),
             (0b00, 0b001, 0b010) => self.ld_a_deref_bc(),
@@ -563,7 +611,7 @@ impl<'a> InstrExecution<'a> {
                 let cpu = cpu.alu_op(AluOp::Add, low_byte(cpu.regs.sp), *cpu.data);
                 cpu.write_r(R::L, cpu.alu_result)
                     .on_tock(|cpu| cpu.alu_flags.z = false)
-                    .write_f()
+                    .write_f(ALL_FLAGS)
                     .bus_no_op()
             })
             .cycle(|cpu| {
@@ -587,6 +635,34 @@ impl<'a> InstrExecution<'a> {
             .cycle(|cpu| cpu.fetch())
     }
 
+    fn alu_op(&mut self, op: AluOp, rhs: S) -> &mut Self {
+        self.read_s(rhs)
+            .micro_op(|cpu| {
+                cpu.alu_op(op, cpu.regs.a, *cpu.data);
+                cpu.write_r(R::A, cpu.alu_result);
+                cpu.write_f(ALL_FLAGS)
+            })
+            .cycle(|cpu| cpu.fetch())
+    }
+
+    fn inc_m(&mut self, m: M) -> &mut Self {
+        self.read_s(S::M(m))
+            .micro_op(|cpu| {
+                cpu.alu_op(AluOp::Add, *cpu.data, 0x01);
+                *cpu.data = cpu.alu_result;
+                cpu.write_f(flags!(z, n, h))
+            })
+            .write_m(m)
+            .cycle(|cpu| cpu.fetch())
+    }
+
+    fn ret(&mut self) -> &mut Self {
+        self.cycle(|cpu| cpu.bus_read(cpu.regs.sp).increment_sp().write_addr_l())
+            .cycle(|cpu| cpu.bus_read(cpu.regs.sp).increment_sp().write_addr_h())
+            .cycle(|cpu| cpu.bus_no_op().write_pc())
+            .cycle(|cpu| cpu.fetch())
+    }
+
     fn read_s(&mut self, s: S) -> &mut Self {
         match s {
             S::M(M::R(r)) => self.micro_op(|cpu| cpu.read_r(r)),
@@ -600,23 +676,6 @@ impl<'a> InstrExecution<'a> {
             M::R(r) => self.micro_op(|cpu| cpu.write_r(r, *cpu.data)),
             M::DerefHl => self.cycle(|cpu| cpu.bus_write(cpu.regs.hl(), *cpu.data)),
         }
-    }
-
-    fn alu_op(&mut self, op: AluOp, rhs: S) -> &mut Self {
-        self.read_s(rhs)
-            .micro_op(|cpu| {
-                cpu.alu_op(op, cpu.regs.a, *cpu.data);
-                cpu.write_r(R::A, cpu.alu_result);
-                cpu.write_f()
-            })
-            .cycle(|cpu| cpu.fetch())
-    }
-
-    fn ret(&mut self) -> &mut Self {
-        self.cycle(|cpu| cpu.bus_read(cpu.regs.sp).increment_sp().write_addr_l())
-            .cycle(|cpu| cpu.bus_read(cpu.regs.sp).increment_sp().write_addr_h())
-            .cycle(|cpu| cpu.bus_no_op().write_pc())
-            .cycle(|cpu| cpu.fetch())
     }
 
     fn cycle<F>(&mut self, f: F) -> &mut Self
@@ -793,8 +852,8 @@ impl<'a> CpuProxy<'a> {
         self.on_tock(|cpu| *cpu.regs.select_r_mut(r) = data)
     }
 
-    fn write_f(&mut self) -> &mut Self {
-        self.on_tock(|cpu| cpu.regs.f = cpu.alu_flags.clone())
+    fn write_f(&mut self, mask: Flags) -> &mut Self {
+        self.on_tock(|cpu| cpu.regs.f = cpu.regs.f & !mask | cpu.alu_flags & mask)
     }
 
     fn alu_op(&mut self, op: AluOp, lhs: u8, rhs: u8) -> &mut Self {
