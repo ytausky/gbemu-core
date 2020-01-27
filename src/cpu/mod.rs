@@ -103,8 +103,7 @@ struct ComplexInstrExecState {
     opcode: Opcode,
     m_cycle: MCycle,
     data: u8,
-    addr_h: u8,
-    addr_l: u8,
+    addr: u16,
 }
 
 #[derive(Clone)]
@@ -262,8 +261,7 @@ impl Default for ComplexInstrExecState {
             opcode: Opcode(0x00),
             m_cycle: M1,
             data: 0xff,
-            addr_h: 0xff,
-            addr_l: 0xff,
+            addr: 0xffff,
         }
     }
 }
@@ -408,8 +406,7 @@ impl From<ModeTransition> for Mode {
                 opcode,
                 m_cycle: M1,
                 data: 0xff,
-                addr_h: 0xff,
-                addr_l: 0xff,
+                addr: 0xffff,
             }),
         }
     }
@@ -539,14 +536,14 @@ impl<'a> InstrExecution<'a> {
     fn ld_a_deref_nn(&mut self) -> &mut Self {
         self.cycle(|cpu| cpu.read_immediate().write_addr_l())
             .cycle(|cpu| cpu.read_immediate().write_addr_h())
-            .cycle(|cpu| cpu.bus_read(cpu.addr()))
+            .cycle(|cpu| cpu.bus_read(*cpu.addr))
             .cycle(|cpu| cpu.write_r(R::A, *cpu.data).fetch())
     }
 
     fn ld_deref_nn_a(&mut self) -> &mut Self {
         self.cycle(|cpu| cpu.read_immediate().write_addr_l())
             .cycle(|cpu| cpu.read_immediate().write_addr_h())
-            .cycle(|cpu| cpu.bus_write(cpu.addr(), cpu.regs.a))
+            .cycle(|cpu| cpu.bus_write(*cpu.addr, cpu.regs.a))
             .cycle(|cpu| cpu.fetch())
     }
 
@@ -583,7 +580,7 @@ impl<'a> InstrExecution<'a> {
     fn ld_dd_nn(&mut self, dd: Dd) -> &mut Self {
         self.cycle(|cpu| cpu.read_immediate().write_addr_l())
             .cycle(|cpu| cpu.read_immediate().write_addr_h())
-            .cycle(|cpu| cpu.write_dd(dd, cpu.addr()).fetch())
+            .cycle(|cpu| cpu.write_dd(dd, *cpu.addr).fetch())
     }
 
     fn ld_sp_hl(&mut self) -> &mut Self {
@@ -630,10 +627,10 @@ impl<'a> InstrExecution<'a> {
         self.cycle(|cpu| cpu.read_immediate().write_addr_l())
             .cycle(|cpu| cpu.read_immediate().write_addr_h())
             .cycle(|cpu| {
-                cpu.bus_write(cpu.addr(), low_byte(cpu.regs.sp))
+                cpu.bus_write(*cpu.addr, low_byte(cpu.regs.sp))
                     .increment_addr()
             })
-            .cycle(|cpu| cpu.bus_write(cpu.addr(), high_byte(cpu.regs.sp)))
+            .cycle(|cpu| cpu.bus_write(*cpu.addr, high_byte(cpu.regs.sp)))
             .cycle(|cpu| cpu.fetch())
     }
 
@@ -714,8 +711,7 @@ impl<'a> InstrExecution<'a> {
         CpuProxy {
             regs: self.regs,
             data: &mut self.state.data,
-            addr_h: &mut self.state.addr_h,
-            addr_l: &mut self.state.addr_l,
+            addr: &mut self.state.addr,
             alu_result: 0xff,
             alu_flags: Default::default(),
             mode_transition: &mut self.mode_transition,
@@ -729,8 +725,7 @@ impl<'a> InstrExecution<'a> {
 struct CpuProxy<'a> {
     regs: &'a mut Regs,
     data: &'a mut u8,
-    addr_h: &'a mut u8,
-    addr_l: &'a mut u8,
+    addr: &'a mut u16,
     alu_result: u8,
     alu_flags: Flags,
     phase: Phase,
@@ -793,27 +788,19 @@ impl<'a> CpuProxy<'a> {
     }
 
     fn increment_addr(&mut self) -> &mut Self {
-        self.on_tock(|cpu| {
-            let addr = cpu.addr() + 1;
-            *cpu.addr_l = low_byte(addr);
-            *cpu.addr_h = high_byte(addr);
-        })
+        self.on_tock(|cpu| *cpu.addr += 1)
     }
 
     fn write_addr_h(&mut self) -> &mut Self {
-        self.on_tock(|cpu| *cpu.addr_h = *cpu.data)
+        self.on_tock(|cpu| *cpu.addr = *cpu.addr & 0x00ff | (u16::from(*cpu.data) << 8))
     }
 
     fn write_addr_l(&mut self) -> &mut Self {
-        self.on_tock(|cpu| *cpu.addr_l = *cpu.data)
+        self.on_tock(|cpu| *cpu.addr = *cpu.addr & 0xff00 | u16::from(*cpu.data))
     }
 
     fn write_pc(&mut self) -> &mut Self {
-        self.on_tock(|cpu| cpu.regs.pc = cpu.addr())
-    }
-
-    fn addr(&self) -> u16 {
-        u16::from(*self.addr_h) << 8 | u16::from(*self.addr_l)
+        self.on_tock(|cpu| cpu.regs.pc = *cpu.addr)
     }
 
     fn decode(&mut self) -> &mut Self {
