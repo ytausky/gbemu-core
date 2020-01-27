@@ -655,10 +655,10 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ret(&mut self) -> &mut Self {
-        self.cycle(|cpu| cpu.bus_read(cpu.regs.sp).increment_sp().write_addr_l())
-            .cycle(|cpu| cpu.bus_read(cpu.regs.sp).increment_sp().write_addr_h())
-            .cycle(|cpu| cpu.bus_no_op().write_pc())
-            .cycle(|cpu| cpu.fetch())
+        self.microinstruction(|cpu| cpu.pop_byte().write_addr_l())
+            .microinstruction(|cpu| cpu.pop_byte().write_addr_h())
+            .microinstruction(|cpu| cpu.write_pc())
+            .microinstruction(|cpu| cpu.fetch())
     }
 
     fn read_s<F>(&mut self, s: S, f: F) -> &mut Self
@@ -707,6 +707,61 @@ impl<'a> InstrExecution<'a> {
         self
     }
 
+    fn microinstruction<F>(&mut self, f: F) -> &mut Self
+    where
+        F: FnOnce(&mut Microinstruction) -> &mut Microinstruction,
+    {
+        let output = if self.state.m_cycle == self.sweep_m_cycle {
+            let mut microinstruction = Microinstruction::default();
+            f(&mut microinstruction);
+            Some(self.execute_microinstruction(&microinstruction))
+        } else {
+            None
+        };
+        self.sweep_m_cycle = self.sweep_m_cycle.next();
+        self.output = self.output.take().or(output);
+        self
+    }
+
+    fn execute_microinstruction(&mut self, microinstruction: &Microinstruction) -> CpuOutput {
+        let addr = match microinstruction.word_select {
+            WordSelect::Pc => self.regs.pc,
+            WordSelect::Sp => self.regs.sp,
+        };
+
+        if *self.phase == Tock {
+            if let Some(byte_writeback) = &microinstruction.byte_writeback {
+                let byte = match byte_writeback.src {
+                    ByteWritebackSrc::Bus => self.input.data.unwrap(),
+                };
+                match byte_writeback.dest {
+                    ByteWritebackDest::AddrH => {
+                        self.state.addr = self.state.addr & 0x00ff | u16::from(byte) << 8
+                    }
+                    ByteWritebackDest::AddrL => {
+                        self.state.addr = self.state.addr & 0xff00 | u16::from(byte)
+                    }
+                }
+            }
+            if let Some(word_writeback) = &microinstruction.word_writeback {
+                let word = match word_writeback.src {
+                    WordWritebackSrc::Addr => self.state.addr,
+                    WordWritebackSrc::Inc => addr + 1,
+                };
+                match word_writeback.dest {
+                    WordWritebackDest::Pc => self.regs.pc = word,
+                    WordWritebackDest::Sp => self.regs.sp = word,
+                }
+            }
+        }
+
+        if *self.phase == Tick && microinstruction.bus_read {
+            Some(BusOp::Read(addr))
+        } else {
+            None
+        }
+    }
+
     fn cpu_proxy(&mut self) -> CpuProxy {
         CpuProxy {
             regs: self.regs,
@@ -720,6 +775,104 @@ impl<'a> InstrExecution<'a> {
             output: None,
         }
     }
+}
+
+struct Microinstruction {
+    word_select: WordSelect,
+    byte_writeback: Option<ByteWriteback>,
+    word_writeback: Option<WordWriteback>,
+    bus_read: bool,
+}
+
+impl Default for Microinstruction {
+    fn default() -> Self {
+        Self {
+            word_select: WordSelect::Pc,
+            byte_writeback: None,
+            word_writeback: None,
+            bus_read: false,
+        }
+    }
+}
+
+impl Microinstruction {
+    fn pop_byte(&mut self) -> &mut Self {
+        self.word_select = WordSelect::Sp;
+        self.word_writeback = Some(WordWriteback {
+            dest: WordWritebackDest::Sp,
+            src: WordWritebackSrc::Inc,
+        });
+        self.bus_read = true;
+        self
+    }
+
+    fn write_addr_l(&mut self) -> &mut Self {
+        self.byte_writeback = Some(ByteWriteback {
+            dest: ByteWritebackDest::AddrL,
+            src: ByteWritebackSrc::Bus,
+        });
+        self
+    }
+
+    fn write_addr_h(&mut self) -> &mut Self {
+        self.byte_writeback = Some(ByteWriteback {
+            dest: ByteWritebackDest::AddrH,
+            src: ByteWritebackSrc::Bus,
+        });
+        self
+    }
+
+    fn write_pc(&mut self) -> &mut Self {
+        self.word_writeback = Some(WordWriteback {
+            dest: WordWritebackDest::Pc,
+            src: WordWritebackSrc::Addr,
+        });
+        self
+    }
+
+    fn fetch(&mut self) -> &mut Self {
+        self.word_select = WordSelect::Pc;
+        self.word_writeback = Some(WordWriteback {
+            dest: WordWritebackDest::Pc,
+            src: WordWritebackSrc::Inc,
+        });
+        self.bus_read = true;
+        self
+    }
+}
+
+enum WordSelect {
+    Pc,
+    Sp,
+}
+
+struct ByteWriteback {
+    dest: ByteWritebackDest,
+    src: ByteWritebackSrc,
+}
+
+enum ByteWritebackDest {
+    AddrH,
+    AddrL,
+}
+
+enum ByteWritebackSrc {
+    Bus,
+}
+
+struct WordWriteback {
+    dest: WordWritebackDest,
+    src: WordWritebackSrc,
+}
+
+enum WordWritebackDest {
+    Pc,
+    Sp,
+}
+
+enum WordWritebackSrc {
+    Addr,
+    Inc,
 }
 
 struct CpuProxy<'a> {
@@ -797,10 +950,6 @@ impl<'a> CpuProxy<'a> {
 
     fn write_addr_l(&mut self) -> &mut Self {
         self.on_tock(|cpu| *cpu.addr = *cpu.addr & 0xff00 | u16::from(*cpu.data))
-    }
-
-    fn write_pc(&mut self) -> &mut Self {
-        self.on_tock(|cpu| cpu.regs.pc = *cpu.addr)
     }
 
     fn decode(&mut self) -> &mut Self {
