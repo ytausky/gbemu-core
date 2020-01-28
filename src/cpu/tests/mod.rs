@@ -44,7 +44,7 @@ fn ret() {
     let mut cpu = Cpu::default();
     cpu.regs.sp = 0x1234;
     cpu.test_opcode(
-        &[0xc9],
+        &[RET],
         &[
             (Input::with_data(None), Some(BusOp::Read(0x1234))),
             (Input::with_data(Some(0x78)), None),
@@ -59,6 +59,36 @@ fn ret() {
     );
     assert_eq!(cpu.regs.sp, 0x1236)
 }
+
+#[test]
+fn two_rets() {
+    let mut cpu = Cpu::default();
+    cpu.regs.sp = 0x1234;
+    cpu.test_opcode(
+        &[RET],
+        &[
+            (Input::with_data(None), Some(BusOp::Read(0x1234))),
+            (Input::with_data(Some(0x78)), None),
+            (Input::with_data(None), Some(BusOp::Read(0x1235))),
+            (Input::with_data(Some(0x56)), None),
+            (Input::with_data(None), None),
+            (Input::with_data(None), None),
+            (Input::with_data(None), Some(BusOp::Read(0x5678))),
+            (Input::with_data(Some(RET)), None),
+            (Input::with_data(None), Some(BusOp::Read(0x1236))),
+            (Input::with_data(Some(0xbc)), None),
+            (Input::with_data(None), Some(BusOp::Read(0x1237))),
+            (Input::with_data(Some(0x9a)), None),
+            (Input::with_data(None), None),
+            (Input::with_data(None), None),
+            (Input::with_data(None), Some(BusOp::Read(0x9abc))),
+            (Input::with_data(Some(0x00)), None),
+        ],
+    );
+    assert_eq!(cpu.regs.sp, 0x1238)
+}
+
+const RET: u8 = 0xc9;
 
 impl Cpu {
     fn test_simple_instr<'a, I>(&mut self, opcode: &[u8], steps: I)

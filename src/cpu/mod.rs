@@ -395,6 +395,7 @@ impl Cpu {
     }
 }
 
+#[derive(Clone, Copy)]
 enum ModeTransition {
     Run(Opcode),
 }
@@ -753,6 +754,10 @@ impl<'a> InstrExecution<'a> {
                     WordWritebackDest::Sp => self.regs.sp = word,
                 }
             }
+
+            if microinstruction.write_opcode {
+                self.mode_transition = Some(ModeTransition::Run(Opcode(self.input.data.unwrap())))
+            }
         }
 
         if *self.phase == Tick && microinstruction.bus_read {
@@ -782,6 +787,7 @@ struct Microinstruction {
     byte_writeback: Option<ByteWriteback>,
     word_writeback: Option<WordWriteback>,
     bus_read: bool,
+    write_opcode: bool,
 }
 
 impl Default for Microinstruction {
@@ -791,6 +797,7 @@ impl Default for Microinstruction {
             byte_writeback: None,
             word_writeback: None,
             bus_read: false,
+            write_opcode: false,
         }
     }
 }
@@ -837,6 +844,7 @@ impl Microinstruction {
             src: WordWritebackSrc::Inc,
         });
         self.bus_read = true;
+        self.write_opcode = true;
         self
     }
 }
