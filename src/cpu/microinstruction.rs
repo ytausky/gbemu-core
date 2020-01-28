@@ -35,8 +35,9 @@ struct ByteWriteback {
     src: ByteWritebackSrc,
 }
 
-enum ByteWritebackSrc {
+pub(super) enum ByteWritebackSrc {
     Bus,
+    Data,
 }
 
 struct WordWriteback {
@@ -133,11 +134,8 @@ impl Microinstruction {
         self
     }
 
-    pub(super) fn write_data(&mut self, dest: DataSel) -> &mut Self {
-        self.byte_writeback = Some(ByteWriteback {
-            dest,
-            src: ByteWritebackSrc::Bus,
-        });
+    pub(super) fn write_data(&mut self, dest: DataSel, src: ByteWritebackSrc) -> &mut Self {
+        self.byte_writeback = Some(ByteWriteback { dest, src });
         self
     }
 
@@ -190,6 +188,7 @@ impl<'a> InstrExecution<'a> {
             if let Some(byte_writeback) = &microinstruction.byte_writeback {
                 let byte = match byte_writeback.src {
                     ByteWritebackSrc::Bus => self.input.data.unwrap(),
+                    ByteWritebackSrc::Data => data,
                 };
                 match byte_writeback.dest {
                     DataSel::R(r) => *self.regs.select_r_mut(r) = byte,
