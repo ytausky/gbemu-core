@@ -31,8 +31,10 @@ struct ByteWriteback {
     src: ByteWritebackSrc,
 }
 
-enum ByteWritebackDest {
-    A,
+pub(super) enum ByteWritebackDest {
+    R(R),
+    SpH,
+    SpL,
     DataBuf,
     AddrH,
     AddrL,
@@ -138,7 +140,7 @@ impl Microinstruction {
 
     pub(super) fn write_a(&mut self) -> &mut Self {
         self.byte_writeback = Some(ByteWriteback {
-            dest: ByteWritebackDest::A,
+            dest: ByteWritebackDest::R(R::A),
             src: ByteWritebackSrc::Bus,
         });
         self
@@ -163,6 +165,14 @@ impl Microinstruction {
     pub(super) fn write_addr_h(&mut self) -> &mut Self {
         self.byte_writeback = Some(ByteWriteback {
             dest: ByteWritebackDest::AddrH,
+            src: ByteWritebackSrc::Bus,
+        });
+        self
+    }
+
+    pub(super) fn data_writeback(&mut self, dest: ByteWritebackDest) -> &mut Self {
+        self.byte_writeback = Some(ByteWriteback {
+            dest,
             src: ByteWritebackSrc::Bus,
         });
         self
@@ -215,7 +225,13 @@ impl<'a> InstrExecution<'a> {
                     ByteWritebackSrc::Bus => self.input.data.unwrap(),
                 };
                 match byte_writeback.dest {
-                    ByteWritebackDest::A => self.regs.a = byte,
+                    ByteWritebackDest::R(r) => *self.regs.select_r_mut(r) = byte,
+                    ByteWritebackDest::SpH => {
+                        self.regs.sp = self.regs.sp & 0x00ff | u16::from(byte) << 8
+                    }
+                    ByteWritebackDest::SpL => {
+                        self.regs.sp = self.regs.sp & 0xff00 | u16::from(byte)
+                    }
                     ByteWritebackDest::DataBuf => self.state.data = byte,
                     ByteWritebackDest::AddrH => {
                         self.state.addr = self.state.addr & 0x00ff | u16::from(byte) << 8
@@ -254,5 +270,25 @@ impl<'a> InstrExecution<'a> {
                 BusOpSelect::Write => BusOp::Write(addr, data),
             })
             .and_then(|op| if *self.phase == Tick { Some(op) } else { None })
+    }
+}
+
+impl Dd {
+    pub(super) fn low(self) -> ByteWritebackDest {
+        match self {
+            Dd::Bc => ByteWritebackDest::R(R::C),
+            Dd::De => ByteWritebackDest::R(R::E),
+            Dd::Hl => ByteWritebackDest::R(R::L),
+            Dd::Sp => ByteWritebackDest::SpL,
+        }
+    }
+
+    pub(super) fn high(self) -> ByteWritebackDest {
+        match self {
+            Dd::Bc => ByteWritebackDest::R(R::B),
+            Dd::De => ByteWritebackDest::R(R::D),
+            Dd::Hl => ByteWritebackDest::R(R::H),
+            Dd::Sp => ByteWritebackDest::SpH,
+        }
     }
 }
