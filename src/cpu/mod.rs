@@ -352,8 +352,8 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ld_deref_c_a(&mut self) -> &mut Self {
-        self.cycle(|cpu| cpu.bus_write(0xff00 | u16::from(cpu.regs.c), cpu.regs.a))
-            .cycle(|cpu| cpu.fetch())
+        self.microinstruction(|cpu| cpu.bus_write(WordSelect::C, DataSelect::R(R::A)))
+            .microinstruction(|cpu| cpu.fetch())
     }
 
     fn ld_a_deref_n(&mut self) -> &mut Self {
