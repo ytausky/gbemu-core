@@ -22,6 +22,7 @@ pub(super) enum WordSelect {
     Sp,
     AddrBuffer,
     C,
+    DataBuf,
 }
 
 struct ByteWriteback {
@@ -31,6 +32,7 @@ struct ByteWriteback {
 
 enum ByteWritebackDest {
     A,
+    DataBuf,
     AddrH,
     AddrL,
 }
@@ -123,17 +125,25 @@ impl Microinstruction {
         self
     }
 
-    pub(super) fn write_addr_l(&mut self) -> &mut Self {
+    pub(super) fn write_a(&mut self) -> &mut Self {
         self.byte_writeback = Some(ByteWriteback {
-            dest: ByteWritebackDest::AddrL,
+            dest: ByteWritebackDest::A,
             src: ByteWritebackSrc::Bus,
         });
         self
     }
 
-    pub(super) fn write_a(&mut self) -> &mut Self {
+    pub(super) fn write_data_buf(&mut self) -> &mut Self {
         self.byte_writeback = Some(ByteWriteback {
-            dest: ByteWritebackDest::A,
+            dest: ByteWritebackDest::DataBuf,
+            src: ByteWritebackSrc::Bus,
+        });
+        self
+    }
+
+    pub(super) fn write_addr_l(&mut self) -> &mut Self {
+        self.byte_writeback = Some(ByteWriteback {
+            dest: ByteWritebackDest::AddrL,
             src: ByteWritebackSrc::Bus,
         });
         self
@@ -184,6 +194,7 @@ impl<'a> InstrExecution<'a> {
             WordSelect::Sp => self.regs.sp,
             WordSelect::AddrBuffer => self.state.addr,
             WordSelect::C => 0xff00 | u16::from(self.regs.c),
+            WordSelect::DataBuf => 0xff00 | u16::from(self.state.data),
         };
 
         if *self.phase == Tock {
@@ -193,6 +204,7 @@ impl<'a> InstrExecution<'a> {
                 };
                 match byte_writeback.dest {
                     ByteWritebackDest::A => self.regs.a = byte,
+                    ByteWritebackDest::DataBuf => self.state.data = byte,
                     ByteWritebackDest::AddrH => {
                         self.state.addr = self.state.addr & 0x00ff | u16::from(byte) << 8
                     }
