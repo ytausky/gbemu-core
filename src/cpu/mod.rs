@@ -1,4 +1,5 @@
 use self::{MCycle::*, Phase::*};
+use self::microinstruction::*;
 
 use std::ops::{BitAnd, BitOr, Not};
 
@@ -17,6 +18,7 @@ macro_rules! flags {
 }
 
 mod alu;
+mod microinstruction;
 
 #[cfg(test)]
 mod tests;
@@ -789,156 +791,6 @@ impl<'a> InstrExecution<'a> {
             output: None,
         }
     }
-}
-
-struct Microinstruction {
-    data_select: DataSelect,
-    word_select: WordSelect,
-    byte_writeback: Option<ByteWriteback>,
-    word_writeback: Option<WordWriteback>,
-    bus_op_select: Option<BusOpSelect>,
-    write_opcode: bool,
-}
-
-impl Default for Microinstruction {
-    fn default() -> Self {
-        Self {
-            data_select: DataSelect::R(R::A),
-            word_select: WordSelect::Pc,
-            byte_writeback: None,
-            word_writeback: None,
-            bus_op_select: None,
-            write_opcode: false,
-        }
-    }
-}
-
-impl Microinstruction {
-    fn read_immediate(&mut self) -> &mut Self {
-        self.word_select = WordSelect::Pc;
-        self.word_writeback = Some(WordWriteback {
-            dest: WordWritebackDest::Pc,
-            src: WordWritebackSrc::Inc,
-        });
-        self.bus_op_select = Some(BusOpSelect::Read);
-        self
-    }
-
-    fn pop_byte(&mut self) -> &mut Self {
-        self.word_select = WordSelect::Sp;
-        self.word_writeback = Some(WordWriteback {
-            dest: WordWritebackDest::Sp,
-            src: WordWritebackSrc::Inc,
-        });
-        self.bus_op_select = Some(BusOpSelect::Read);
-        self
-    }
-
-    fn bus_write(&mut self, addr: WordSelect, data: DataSelect) -> &mut Self {
-        self.bus_op_select = Some(BusOpSelect::Write);
-        self.select_addr(addr).select_data(data)
-    }
-
-    fn select_data(&mut self, selector: DataSelect) -> &mut Self {
-        self.data_select = selector;
-        self
-    }
-
-    fn select_addr(&mut self, selector: WordSelect) -> &mut Self {
-        self.word_select = selector;
-        self
-    }
-
-    fn increment(&mut self, dest: WordWritebackDest) -> &mut Self {
-        self.word_writeback = Some(WordWriteback {
-            dest,
-            src: WordWritebackSrc::Inc,
-        });
-        self
-    }
-
-    fn write_addr_l(&mut self) -> &mut Self {
-        self.byte_writeback = Some(ByteWriteback {
-            dest: ByteWritebackDest::AddrL,
-            src: ByteWritebackSrc::Bus,
-        });
-        self
-    }
-
-    fn write_addr_h(&mut self) -> &mut Self {
-        self.byte_writeback = Some(ByteWriteback {
-            dest: ByteWritebackDest::AddrH,
-            src: ByteWritebackSrc::Bus,
-        });
-        self
-    }
-
-    fn write_pc(&mut self) -> &mut Self {
-        self.word_writeback = Some(WordWriteback {
-            dest: WordWritebackDest::Pc,
-            src: WordWritebackSrc::Addr,
-        });
-        self
-    }
-
-    fn fetch(&mut self) -> &mut Self {
-        self.word_select = WordSelect::Pc;
-        self.word_writeback = Some(WordWriteback {
-            dest: WordWritebackDest::Pc,
-            src: WordWritebackSrc::Inc,
-        });
-        self.bus_op_select = Some(BusOpSelect::Read);
-        self.write_opcode = true;
-        self
-    }
-}
-
-enum DataSelect {
-    R(R),
-    SpH,
-    SpL,
-}
-
-enum WordSelect {
-    AddrBuffer,
-    Pc,
-    Sp,
-}
-
-struct ByteWriteback {
-    dest: ByteWritebackDest,
-    src: ByteWritebackSrc,
-}
-
-enum ByteWritebackDest {
-    AddrH,
-    AddrL,
-}
-
-enum ByteWritebackSrc {
-    Bus,
-}
-
-struct WordWriteback {
-    dest: WordWritebackDest,
-    src: WordWritebackSrc,
-}
-
-enum WordWritebackDest {
-    AddrBuffer,
-    Pc,
-    Sp,
-}
-
-enum WordWritebackSrc {
-    Addr,
-    Inc,
-}
-
-#[derive(Clone, Copy, PartialEq)]
-enum BusOpSelect {
-    Read,
-    Write,
 }
 
 struct CpuProxy<'a> {
