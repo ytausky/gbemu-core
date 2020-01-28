@@ -86,6 +86,21 @@ enum Qq {
     Af,
 }
 
+impl From<u8> for R {
+    fn from(encoding: u8) -> Self {
+        match encoding {
+            0b000 => R::B,
+            0b001 => R::C,
+            0b010 => R::D,
+            0b011 => R::E,
+            0b100 => R::H,
+            0b101 => R::L,
+            0b111 => R::A,
+            _ => panic!(),
+        }
+    }
+}
+
 impl From<u8> for M {
     fn from(encoding: u8) -> Self {
         match encoding {
@@ -293,7 +308,8 @@ impl<'a> InstrExecution<'a> {
             (0b00, dest, 0b001) if dest & 0b001 == 0 => self.ld_dd_nn((dest >> 1).into()),
             (0b00, 0b000, 0b010) => self.ld_deref_bc_a(),
             (0b00, operand, 0b100) => self.inc_m(operand.into()),
-            (0b00, dest, 0b110) => self.ld_m_s(dest.into(), S::N),
+            (0b00, 0b110, 0b110) => self.ld_deref_hl_n(),
+            (0b00, dest, 0b110) => self.ld_r_n(dest.into()),
             (0b00, 0b001, 0b000) => self.ld_deref_nn_sp(),
             (0b00, 0b001, 0b010) => self.ld_a_deref_bc(),
             (0b00, 0b010, 0b010) => self.ld_deref_de_a(),
@@ -303,7 +319,9 @@ impl<'a> InstrExecution<'a> {
             (0b00, 0b110, 0b010) => self.ld_deref_hld_a(),
             (0b00, 0b111, 0b010) => self.ld_a_deref_hld(),
             (0b01, 0b110, 0b110) => self.halt(),
-            (0b01, dest, src) => self.ld_m_s(dest.into(), S::M(src.into())),
+            (0b01, dest, 0b110) => self.ld_r_deref_hl(dest.into()),
+            (0b01, 0b110, src) => self.ld_deref_hl_r(src.into()),
+            (0b01, dest, src) => self.ld_r_r(dest.into(), src.into()),
             (0b10, op, src) => self.alu_op(op.into(), S::M(src.into())),
             (0b11, dest, 0b001) if dest & 0b001 == 0 => self.pop_qq((dest >> 1).into()),
             (0b11, src, 0b101) if src & 0b001 == 0 => self.push_qq((src >> 1).into()),
@@ -330,10 +348,42 @@ impl<'a> InstrExecution<'a> {
         unimplemented!()
     }
 
-    fn ld_m_s(&mut self, dest: M, src: S) -> &mut Self {
-        self.read_s(src, |cpu| cpu)
-            .write_m(dest)
-            .cycle_old(|cpu| cpu.fetch())
+    fn ld_r_r(&mut self, dest: R, src: R) -> &mut Self {
+        self.cycle(|cpu| {
+            cpu.select_data(DataSel::R(src))
+                .write_data(DataSel::R(dest), ByteWritebackSrc::Data)
+                .fetch()
+        })
+    }
+
+    fn ld_r_n(&mut self, dest: R) -> &mut Self {
+        self.cycle(|cpu| {
+            cpu.read_immediate()
+                .write_data(DataSel::R(dest), ByteWritebackSrc::Bus)
+        })
+        .cycle(|cpu| cpu.fetch())
+    }
+
+    fn ld_r_deref_hl(&mut self, dest: R) -> &mut Self {
+        self.cycle(|cpu| {
+            cpu.bus_read(AddrSel::Hl)
+                .write_data(DataSel::R(dest), ByteWritebackSrc::Bus)
+        })
+        .cycle(|cpu| cpu.fetch())
+    }
+
+    fn ld_deref_hl_r(&mut self, src: R) -> &mut Self {
+        self.cycle(|cpu| cpu.bus_write(AddrSel::Hl, DataSel::R(src)))
+            .cycle(|cpu| cpu.fetch())
+    }
+
+    fn ld_deref_hl_n(&mut self) -> &mut Self {
+        self.cycle(|cpu| {
+            cpu.read_immediate()
+                .write_data(DataSel::DataBuf, ByteWritebackSrc::Bus)
+        })
+        .cycle(|cpu| cpu.bus_write(AddrSel::Hl, DataSel::DataBuf))
+        .cycle(|cpu| cpu.fetch())
     }
 
     fn ld_a_deref_bc(&mut self) -> &mut Self {
