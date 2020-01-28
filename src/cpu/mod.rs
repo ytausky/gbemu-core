@@ -419,8 +419,11 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ld_deref_hld_a(&mut self) -> &mut Self {
-        self.cycle(|cpu| cpu.bus_write(cpu.regs.hl(), cpu.regs.a).decrement_hl())
-            .cycle(|cpu| cpu.fetch())
+        self.microinstruction(|cpu| {
+            cpu.bus_write(WordSelect::Hl, DataSelect::R(R::A))
+                .decrement(WordWritebackDest::Hl)
+        })
+        .microinstruction(|cpu| cpu.fetch())
     }
 
     fn ld_dd_nn(&mut self, dd: Dd) -> &mut Self {
@@ -599,10 +602,6 @@ struct CpuProxy<'a> {
 impl<'a> CpuProxy<'a> {
     fn read_immediate(&mut self) -> &mut Self {
         self.bus_read(self.regs.pc).increment_pc()
-    }
-
-    fn decrement_hl(&mut self) -> &mut Self {
-        self.write_dd(Dd::Hl, self.regs.hl() - 1)
     }
 
     fn decrement_dd(&mut self, dd: Dd) -> &mut Self {
