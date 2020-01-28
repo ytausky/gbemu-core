@@ -228,7 +228,7 @@ impl<'a> InstrExecution<'a> {
             if let Some(word_writeback) = &microinstruction.word_writeback {
                 let word = match word_writeback.src {
                     WordWritebackSrc::Addr => self.state.addr,
-                    WordWritebackSrc::Inc => addr + 1,
+                    WordWritebackSrc::Inc => addr.wrapping_add(1),
                     WordWritebackSrc::Dec => addr - 1,
                 };
                 match word_writeback.dest {
