@@ -1,7 +1,7 @@
 use super::*;
 
 pub(super) struct Microinstruction {
-    data_select: DataSelect,
+    data_select: DataSel,
     word_select: WordSelect,
     byte_writeback: Option<ByteWriteback>,
     word_writeback: Option<WordWriteback>,
@@ -9,10 +9,14 @@ pub(super) struct Microinstruction {
     write_opcode: bool,
 }
 
-pub(super) enum DataSelect {
+pub(super) enum DataSel {
     R(R),
+    F,
     SpH,
     SpL,
+    DataBuf,
+    AddrH,
+    AddrL,
 }
 
 pub(super) enum WordSelect {
@@ -27,17 +31,8 @@ pub(super) enum WordSelect {
 }
 
 struct ByteWriteback {
-    dest: ByteWritebackDest,
+    dest: DataSel,
     src: ByteWritebackSrc,
-}
-
-pub(super) enum ByteWritebackDest {
-    R(R),
-    SpH,
-    SpL,
-    DataBuf,
-    AddrH,
-    AddrL,
 }
 
 enum ByteWritebackSrc {
@@ -71,7 +66,7 @@ enum BusOpSelect {
 impl Default for Microinstruction {
     fn default() -> Self {
         Self {
-            data_select: DataSelect::R(R::A),
+            data_select: DataSel::R(R::A),
             word_select: WordSelect::Pc,
             byte_writeback: None,
             word_writeback: None,
@@ -107,12 +102,12 @@ impl Microinstruction {
         self.select_addr(addr_sel)
     }
 
-    pub(super) fn bus_write(&mut self, addr: WordSelect, data: DataSelect) -> &mut Self {
+    pub(super) fn bus_write(&mut self, addr: WordSelect, data: DataSel) -> &mut Self {
         self.bus_op_select = Some(BusOpSelect::Write);
         self.select_addr(addr).select_data(data)
     }
 
-    pub(super) fn select_data(&mut self, selector: DataSelect) -> &mut Self {
+    pub(super) fn select_data(&mut self, selector: DataSel) -> &mut Self {
         self.data_select = selector;
         self
     }
@@ -140,7 +135,7 @@ impl Microinstruction {
 
     pub(super) fn write_a(&mut self) -> &mut Self {
         self.byte_writeback = Some(ByteWriteback {
-            dest: ByteWritebackDest::R(R::A),
+            dest: DataSel::R(R::A),
             src: ByteWritebackSrc::Bus,
         });
         self
@@ -148,7 +143,7 @@ impl Microinstruction {
 
     pub(super) fn write_data_buf(&mut self) -> &mut Self {
         self.byte_writeback = Some(ByteWriteback {
-            dest: ByteWritebackDest::DataBuf,
+            dest: DataSel::DataBuf,
             src: ByteWritebackSrc::Bus,
         });
         self
@@ -156,7 +151,7 @@ impl Microinstruction {
 
     pub(super) fn write_addr_l(&mut self) -> &mut Self {
         self.byte_writeback = Some(ByteWriteback {
-            dest: ByteWritebackDest::AddrL,
+            dest: DataSel::AddrL,
             src: ByteWritebackSrc::Bus,
         });
         self
@@ -164,13 +159,13 @@ impl Microinstruction {
 
     pub(super) fn write_addr_h(&mut self) -> &mut Self {
         self.byte_writeback = Some(ByteWriteback {
-            dest: ByteWritebackDest::AddrH,
+            dest: DataSel::AddrH,
             src: ByteWritebackSrc::Bus,
         });
         self
     }
 
-    pub(super) fn data_writeback(&mut self, dest: ByteWritebackDest) -> &mut Self {
+    pub(super) fn data_writeback(&mut self, dest: DataSel) -> &mut Self {
         self.byte_writeback = Some(ByteWriteback {
             dest,
             src: ByteWritebackSrc::Bus,
@@ -204,9 +199,13 @@ impl<'a> InstrExecution<'a> {
         microinstruction: &Microinstruction,
     ) -> CpuOutput {
         let data = match microinstruction.data_select {
-            DataSelect::R(r) => *self.regs.select_r(r),
-            DataSelect::SpH => high_byte(self.regs.sp),
-            DataSelect::SpL => low_byte(self.regs.sp),
+            DataSel::R(r) => *self.regs.select_r(r),
+            DataSel::F => self.regs.f.into(),
+            DataSel::SpH => high_byte(self.regs.sp),
+            DataSel::SpL => low_byte(self.regs.sp),
+            DataSel::DataBuf => self.state.data,
+            DataSel::AddrH => high_byte(self.state.addr),
+            DataSel::AddrL => low_byte(self.state.addr),
         };
         let addr = match microinstruction.word_select {
             WordSelect::Bc => self.regs.bc(),
@@ -225,20 +224,15 @@ impl<'a> InstrExecution<'a> {
                     ByteWritebackSrc::Bus => self.input.data.unwrap(),
                 };
                 match byte_writeback.dest {
-                    ByteWritebackDest::R(r) => *self.regs.select_r_mut(r) = byte,
-                    ByteWritebackDest::SpH => {
-                        self.regs.sp = self.regs.sp & 0x00ff | u16::from(byte) << 8
-                    }
-                    ByteWritebackDest::SpL => {
-                        self.regs.sp = self.regs.sp & 0xff00 | u16::from(byte)
-                    }
-                    ByteWritebackDest::DataBuf => self.state.data = byte,
-                    ByteWritebackDest::AddrH => {
+                    DataSel::R(r) => *self.regs.select_r_mut(r) = byte,
+                    DataSel::F => self.regs.f = byte.into(),
+                    DataSel::SpH => self.regs.sp = self.regs.sp & 0x00ff | u16::from(byte) << 8,
+                    DataSel::SpL => self.regs.sp = self.regs.sp & 0xff00 | u16::from(byte),
+                    DataSel::DataBuf => self.state.data = byte,
+                    DataSel::AddrH => {
                         self.state.addr = self.state.addr & 0x00ff | u16::from(byte) << 8
                     }
-                    ByteWritebackDest::AddrL => {
-                        self.state.addr = self.state.addr & 0xff00 | u16::from(byte)
-                    }
+                    DataSel::AddrL => self.state.addr = self.state.addr & 0xff00 | u16::from(byte),
                 }
             }
             if let Some(word_writeback) = &microinstruction.word_writeback {
@@ -274,21 +268,41 @@ impl<'a> InstrExecution<'a> {
 }
 
 impl Dd {
-    pub(super) fn low(self) -> ByteWritebackDest {
+    pub(super) fn high(self) -> DataSel {
         match self {
-            Dd::Bc => ByteWritebackDest::R(R::C),
-            Dd::De => ByteWritebackDest::R(R::E),
-            Dd::Hl => ByteWritebackDest::R(R::L),
-            Dd::Sp => ByteWritebackDest::SpL,
+            Dd::Bc => DataSel::R(R::B),
+            Dd::De => DataSel::R(R::D),
+            Dd::Hl => DataSel::R(R::H),
+            Dd::Sp => DataSel::SpH,
         }
     }
 
-    pub(super) fn high(self) -> ByteWritebackDest {
+    pub(super) fn low(self) -> DataSel {
         match self {
-            Dd::Bc => ByteWritebackDest::R(R::B),
-            Dd::De => ByteWritebackDest::R(R::D),
-            Dd::Hl => ByteWritebackDest::R(R::H),
-            Dd::Sp => ByteWritebackDest::SpH,
+            Dd::Bc => DataSel::R(R::C),
+            Dd::De => DataSel::R(R::E),
+            Dd::Hl => DataSel::R(R::L),
+            Dd::Sp => DataSel::SpL,
+        }
+    }
+}
+
+impl Qq {
+    pub(super) fn high(self) -> DataSel {
+        match self {
+            Qq::Bc => DataSel::R(R::B),
+            Qq::De => DataSel::R(R::D),
+            Qq::Hl => DataSel::R(R::H),
+            Qq::Af => DataSel::R(R::A),
+        }
+    }
+
+    pub(super) fn low(self) -> DataSel {
+        match self {
+            Qq::Bc => DataSel::R(R::C),
+            Qq::De => DataSel::R(R::E),
+            Qq::Hl => DataSel::R(R::L),
+            Qq::Af => DataSel::F,
         }
     }
 }

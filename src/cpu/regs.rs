@@ -1,4 +1,4 @@
-use super::{Dd, Qq, R};
+use super::{Qq, R};
 
 use std::ops::{BitAnd, BitOr, Not};
 
@@ -41,15 +41,6 @@ impl Regs {
         (u16::from(*self.select_r(h)) << 8) + u16::from(*self.select_r(l))
     }
 
-    pub(super) fn read_dd(&self, dd: Dd) -> u16 {
-        match dd {
-            Dd::Bc => self.bc(),
-            Dd::De => self.de(),
-            Dd::Hl => self.hl(),
-            Dd::Sp => self.sp,
-        }
-    }
-
     pub(super) fn select_r(&self, r: R) -> &u8 {
         match r {
             R::A => &self.a,
@@ -74,6 +65,7 @@ impl Regs {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn read_qq_h(&self, qq: Qq) -> u8 {
         match qq {
             Qq::Bc => self.b,
@@ -83,12 +75,13 @@ impl Regs {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn read_qq_l(&self, qq: Qq) -> u8 {
         match qq {
             Qq::Bc => self.c,
             Qq::De => self.e,
             Qq::Hl => self.l,
-            Qq::Af => (&self.f).into(),
+            Qq::Af => self.f.into(),
         }
     }
 
@@ -111,8 +104,8 @@ impl Regs {
     }
 }
 
-impl From<&Flags> for u8 {
-    fn from(flags: &Flags) -> Self {
+impl From<Flags> for u8 {
+    fn from(flags: Flags) -> Self {
         (if flags.z { 0x80 } else { 0x00 })
             | if flags.n { 0x40 } else { 0x00 }
             | if flags.h { 0x20 } else { 0x00 }
