@@ -1,4 +1,4 @@
-use super::{R, Qq, Dd};
+use super::{Dd, Qq, R};
 
 use std::ops::{BitAnd, BitOr, Not};
 

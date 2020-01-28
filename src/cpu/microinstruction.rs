@@ -16,6 +16,7 @@ pub(super) enum DataSelect {
 }
 
 pub(super) enum WordSelect {
+    Bc,
     AddrBuffer,
     Pc,
     Sp,
@@ -27,6 +28,7 @@ struct ByteWriteback {
 }
 
 enum ByteWritebackDest {
+    A,
     AddrH,
     AddrL,
 }
@@ -91,6 +93,11 @@ impl Microinstruction {
         self
     }
 
+    pub(super) fn bus_read(&mut self, addr_sel: WordSelect) -> &mut Self {
+        self.bus_op_select = Some(BusOpSelect::Read);
+        self.select_addr(addr_sel)
+    }
+
     pub(super) fn bus_write(&mut self, addr: WordSelect, data: DataSelect) -> &mut Self {
         self.bus_op_select = Some(BusOpSelect::Write);
         self.select_addr(addr).select_data(data)
@@ -117,6 +124,14 @@ impl Microinstruction {
     pub(super) fn write_addr_l(&mut self) -> &mut Self {
         self.byte_writeback = Some(ByteWriteback {
             dest: ByteWritebackDest::AddrL,
+            src: ByteWritebackSrc::Bus,
+        });
+        self
+    }
+
+    pub(super) fn write_a(&mut self) -> &mut Self {
+        self.byte_writeback = Some(ByteWriteback {
+            dest: ByteWritebackDest::A,
             src: ByteWritebackSrc::Bus,
         });
         self
@@ -161,6 +176,7 @@ impl<'a> InstrExecution<'a> {
             DataSelect::SpL => low_byte(self.regs.sp),
         };
         let addr = match microinstruction.word_select {
+            WordSelect::Bc => self.regs.bc(),
             WordSelect::AddrBuffer => self.state.addr,
             WordSelect::Pc => self.regs.pc,
             WordSelect::Sp => self.regs.sp,
@@ -172,6 +188,7 @@ impl<'a> InstrExecution<'a> {
                     ByteWritebackSrc::Bus => self.input.data.unwrap(),
                 };
                 match byte_writeback.dest {
+                    ByteWritebackDest::A => self.regs.a = byte,
                     ByteWritebackDest::AddrH => {
                         self.state.addr = self.state.addr & 0x00ff | u16::from(byte) << 8
                     }
