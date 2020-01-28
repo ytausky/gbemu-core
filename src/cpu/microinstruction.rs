@@ -9,6 +9,7 @@ pub(super) struct Microinstruction {
     write_opcode: bool,
 }
 
+#[derive(Clone, Copy)]
 pub(super) enum DataSel {
     R(R),
     F,
@@ -19,6 +20,7 @@ pub(super) enum DataSel {
     AddrL,
 }
 
+#[derive(Clone, Copy)]
 pub(super) enum AddrSel {
     Bc,
     De,
@@ -164,7 +166,76 @@ impl<'a> InstrExecution<'a> {
         &mut self,
         microinstruction: &Microinstruction,
     ) -> CpuOutput {
-        let data = match microinstruction.data_select {
+        match *self.phase {
+            Tick => self.execute_microinstruction_on_tick(microinstruction),
+            Tock => self.execute_microinstruction_on_tock(microinstruction),
+        }
+    }
+
+    fn execute_microinstruction_on_tick(
+        &mut self,
+        microinstruction: &Microinstruction,
+    ) -> CpuOutput {
+        let (data, addr) = (
+            self.data(microinstruction.data_select),
+            self.addr(microinstruction.word_select),
+        );
+        microinstruction.bus_op_select.map(|op| match op {
+            BusOpSelect::Read => BusOp::Read(addr),
+            BusOpSelect::Write => BusOp::Write(addr, data),
+        })
+    }
+
+    fn execute_microinstruction_on_tock(&mut self, microinstruction: &Microinstruction) -> CpuOutput {
+        let (data, addr) = (
+            self.data(microinstruction.data_select),
+            self.addr(microinstruction.word_select),
+        );
+
+        if let Some(byte_writeback) = &microinstruction.byte_writeback {
+            let byte = match byte_writeback.src {
+                ByteWritebackSrc::Bus => self.input.data.unwrap(),
+                ByteWritebackSrc::Data => data,
+            };
+            match byte_writeback.dest {
+                DataSel::R(r) => *self.regs.select_r_mut(r) = byte,
+                DataSel::F => self.regs.f = byte.into(),
+                DataSel::SpH => self.regs.sp = self.regs.sp & 0x00ff | u16::from(byte) << 8,
+                DataSel::SpL => self.regs.sp = self.regs.sp & 0xff00 | u16::from(byte),
+                DataSel::DataBuf => self.state.data = byte,
+                DataSel::AddrH => {
+                    self.state.addr = self.state.addr & 0x00ff | u16::from(byte) << 8
+                }
+                DataSel::AddrL => self.state.addr = self.state.addr & 0xff00 | u16::from(byte),
+            }
+        }
+
+        if let Some(word_writeback) = &microinstruction.word_writeback {
+            let word = match word_writeback.src {
+                WordWritebackSrc::Addr => self.state.addr,
+                WordWritebackSrc::Inc => addr.wrapping_add(1),
+                WordWritebackSrc::Dec => addr - 1,
+            };
+            match word_writeback.dest {
+                WordWritebackDest::Hl => {
+                    self.regs.h = high_byte(word);
+                    self.regs.l = low_byte(word)
+                }
+                WordWritebackDest::Pc => self.regs.pc = word,
+                WordWritebackDest::Sp => self.regs.sp = word,
+                WordWritebackDest::AddrBuf => self.state.addr = word,
+            }
+        }
+
+        if microinstruction.write_opcode {
+            self.mode_transition = Some(ModeTransition::Run(Opcode(self.input.data.unwrap())))
+        }
+
+        None
+    }
+
+    fn data(&self, data_sel: DataSel) -> u8 {
+        match data_sel {
             DataSel::R(r) => *self.regs.select_r(r),
             DataSel::F => self.regs.f.into(),
             DataSel::SpH => high_byte(self.regs.sp),
@@ -172,8 +243,11 @@ impl<'a> InstrExecution<'a> {
             DataSel::DataBuf => self.state.data,
             DataSel::AddrH => high_byte(self.state.addr),
             DataSel::AddrL => low_byte(self.state.addr),
-        };
-        let addr = match microinstruction.word_select {
+        }
+    }
+
+    fn addr(&self, addr_sel: AddrSel) -> u16 {
+        match addr_sel {
             AddrSel::Bc => self.regs.bc(),
             AddrSel::De => self.regs.de(),
             AddrSel::Hl => self.regs.hl(),
@@ -182,55 +256,7 @@ impl<'a> InstrExecution<'a> {
             AddrSel::AddrBuf => self.state.addr,
             AddrSel::C => 0xff00 | u16::from(self.regs.c),
             AddrSel::DataBuf => 0xff00 | u16::from(self.state.data),
-        };
-
-        if *self.phase == Tock {
-            if let Some(byte_writeback) = &microinstruction.byte_writeback {
-                let byte = match byte_writeback.src {
-                    ByteWritebackSrc::Bus => self.input.data.unwrap(),
-                    ByteWritebackSrc::Data => data,
-                };
-                match byte_writeback.dest {
-                    DataSel::R(r) => *self.regs.select_r_mut(r) = byte,
-                    DataSel::F => self.regs.f = byte.into(),
-                    DataSel::SpH => self.regs.sp = self.regs.sp & 0x00ff | u16::from(byte) << 8,
-                    DataSel::SpL => self.regs.sp = self.regs.sp & 0xff00 | u16::from(byte),
-                    DataSel::DataBuf => self.state.data = byte,
-                    DataSel::AddrH => {
-                        self.state.addr = self.state.addr & 0x00ff | u16::from(byte) << 8
-                    }
-                    DataSel::AddrL => self.state.addr = self.state.addr & 0xff00 | u16::from(byte),
-                }
-            }
-            if let Some(word_writeback) = &microinstruction.word_writeback {
-                let word = match word_writeback.src {
-                    WordWritebackSrc::Addr => self.state.addr,
-                    WordWritebackSrc::Inc => addr.wrapping_add(1),
-                    WordWritebackSrc::Dec => addr - 1,
-                };
-                match word_writeback.dest {
-                    WordWritebackDest::Hl => {
-                        self.regs.h = high_byte(word);
-                        self.regs.l = low_byte(word)
-                    }
-                    WordWritebackDest::Pc => self.regs.pc = word,
-                    WordWritebackDest::Sp => self.regs.sp = word,
-                    WordWritebackDest::AddrBuf => self.state.addr = word,
-                }
-            }
-
-            if microinstruction.write_opcode {
-                self.mode_transition = Some(ModeTransition::Run(Opcode(self.input.data.unwrap())))
-            }
         }
-
-        microinstruction
-            .bus_op_select
-            .map(|op| match op {
-                BusOpSelect::Read => BusOp::Read(addr),
-                BusOpSelect::Write => BusOp::Write(addr, data),
-            })
-            .and_then(|op| if *self.phase == Tick { Some(op) } else { None })
     }
 }
 
