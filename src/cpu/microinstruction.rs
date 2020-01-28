@@ -18,9 +18,10 @@ pub(super) enum DataSelect {
 pub(super) enum WordSelect {
     Bc,
     De,
-    AddrBuffer,
     Pc,
     Sp,
+    AddrBuffer,
+    C,
 }
 
 struct ByteWriteback {
@@ -179,9 +180,10 @@ impl<'a> InstrExecution<'a> {
         let addr = match microinstruction.word_select {
             WordSelect::Bc => self.regs.bc(),
             WordSelect::De => self.regs.de(),
-            WordSelect::AddrBuffer => self.state.addr,
             WordSelect::Pc => self.regs.pc,
             WordSelect::Sp => self.regs.sp,
+            WordSelect::AddrBuffer => self.state.addr,
+            WordSelect::C => 0xff00 | u16::from(self.regs.c),
         };
 
         if *self.phase == Tock {
