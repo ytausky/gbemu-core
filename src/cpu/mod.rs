@@ -625,14 +625,14 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ld_deref_nn_sp(&mut self) -> &mut Self {
-        self.cycle(|cpu| cpu.read_immediate().write_addr_l())
-            .cycle(|cpu| cpu.read_immediate().write_addr_h())
-            .cycle(|cpu| {
-                cpu.bus_write(*cpu.addr, low_byte(cpu.regs.sp))
-                    .increment_addr()
+        self.microinstruction(|cpu| cpu.read_immediate().write_addr_l())
+            .microinstruction(|cpu| cpu.read_immediate().write_addr_h())
+            .microinstruction(|cpu| {
+                cpu.bus_write(WordSelect::AddrBuffer, DataSelect::SpL)
+                    .increment(WordWritebackDest::AddrBuffer)
             })
-            .cycle(|cpu| cpu.bus_write(*cpu.addr, high_byte(cpu.regs.sp)))
-            .cycle(|cpu| cpu.fetch())
+            .microinstruction(|cpu| cpu.bus_write(WordSelect::AddrBuffer, DataSelect::SpH))
+            .microinstruction(|cpu| cpu.fetch())
     }
 
     fn alu_op(&mut self, op: AluOp, rhs: S) -> &mut Self {
@@ -725,7 +725,13 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn execute_microinstruction(&mut self, microinstruction: &Microinstruction) -> CpuOutput {
+        let data = match microinstruction.data_select {
+            DataSelect::R(r) => *self.regs.select_r(r),
+            DataSelect::SpH => high_byte(self.regs.sp),
+            DataSelect::SpL => low_byte(self.regs.sp),
+        };
         let addr = match microinstruction.word_select {
+            WordSelect::AddrBuffer => self.state.addr,
             WordSelect::Pc => self.regs.pc,
             WordSelect::Sp => self.regs.sp,
         };
@@ -750,6 +756,7 @@ impl<'a> InstrExecution<'a> {
                     WordWritebackSrc::Inc => addr + 1,
                 };
                 match word_writeback.dest {
+                    WordWritebackDest::AddrBuffer => self.state.addr = word,
                     WordWritebackDest::Pc => self.regs.pc = word,
                     WordWritebackDest::Sp => self.regs.sp = word,
                 }
@@ -760,11 +767,13 @@ impl<'a> InstrExecution<'a> {
             }
         }
 
-        if *self.phase == Tick && microinstruction.bus_read {
-            Some(BusOp::Read(addr))
-        } else {
-            None
-        }
+        microinstruction
+            .bus_op_select
+            .map(|op| match op {
+                BusOpSelect::Read => BusOp::Read(addr),
+                BusOpSelect::Write => BusOp::Write(addr, data),
+            })
+            .and_then(|op| if *self.phase == Tick { Some(op) } else { None })
     }
 
     fn cpu_proxy(&mut self) -> CpuProxy {
@@ -783,33 +792,68 @@ impl<'a> InstrExecution<'a> {
 }
 
 struct Microinstruction {
+    data_select: DataSelect,
     word_select: WordSelect,
     byte_writeback: Option<ByteWriteback>,
     word_writeback: Option<WordWriteback>,
-    bus_read: bool,
+    bus_op_select: Option<BusOpSelect>,
     write_opcode: bool,
 }
 
 impl Default for Microinstruction {
     fn default() -> Self {
         Self {
+            data_select: DataSelect::R(R::A),
             word_select: WordSelect::Pc,
             byte_writeback: None,
             word_writeback: None,
-            bus_read: false,
+            bus_op_select: None,
             write_opcode: false,
         }
     }
 }
 
 impl Microinstruction {
+    fn read_immediate(&mut self) -> &mut Self {
+        self.word_select = WordSelect::Pc;
+        self.word_writeback = Some(WordWriteback {
+            dest: WordWritebackDest::Pc,
+            src: WordWritebackSrc::Inc,
+        });
+        self.bus_op_select = Some(BusOpSelect::Read);
+        self
+    }
+
     fn pop_byte(&mut self) -> &mut Self {
         self.word_select = WordSelect::Sp;
         self.word_writeback = Some(WordWriteback {
             dest: WordWritebackDest::Sp,
             src: WordWritebackSrc::Inc,
         });
-        self.bus_read = true;
+        self.bus_op_select = Some(BusOpSelect::Read);
+        self
+    }
+
+    fn bus_write(&mut self, addr: WordSelect, data: DataSelect) -> &mut Self {
+        self.bus_op_select = Some(BusOpSelect::Write);
+        self.select_addr(addr).select_data(data)
+    }
+
+    fn select_data(&mut self, selector: DataSelect) -> &mut Self {
+        self.data_select = selector;
+        self
+    }
+
+    fn select_addr(&mut self, selector: WordSelect) -> &mut Self {
+        self.word_select = selector;
+        self
+    }
+
+    fn increment(&mut self, dest: WordWritebackDest) -> &mut Self {
+        self.word_writeback = Some(WordWriteback {
+            dest,
+            src: WordWritebackSrc::Inc,
+        });
         self
     }
 
@@ -843,13 +887,20 @@ impl Microinstruction {
             dest: WordWritebackDest::Pc,
             src: WordWritebackSrc::Inc,
         });
-        self.bus_read = true;
+        self.bus_op_select = Some(BusOpSelect::Read);
         self.write_opcode = true;
         self
     }
 }
 
+enum DataSelect {
+    R(R),
+    SpH,
+    SpL,
+}
+
 enum WordSelect {
+    AddrBuffer,
     Pc,
     Sp,
 }
@@ -874,6 +925,7 @@ struct WordWriteback {
 }
 
 enum WordWritebackDest {
+    AddrBuffer,
     Pc,
     Sp,
 }
@@ -881,6 +933,12 @@ enum WordWritebackDest {
 enum WordWritebackSrc {
     Addr,
     Inc,
+}
+
+#[derive(Clone, Copy, PartialEq)]
+enum BusOpSelect {
+    Read,
+    Write,
 }
 
 struct CpuProxy<'a> {
@@ -946,10 +1004,6 @@ impl<'a> CpuProxy<'a> {
 
     fn increment_sp(&mut self) -> &mut Self {
         self.on_tock(|cpu| cpu.regs.sp += 1)
-    }
-
-    fn increment_addr(&mut self) -> &mut Self {
-        self.on_tock(|cpu| *cpu.addr += 1)
     }
 
     fn write_addr_h(&mut self) -> &mut Self {
