@@ -323,7 +323,7 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn nop(&mut self) -> &mut Self {
-        self.cycle(|cpu| cpu.fetch())
+        self.cycle_old(|cpu| cpu.fetch())
     }
 
     fn halt(&mut self) -> &mut Self {
@@ -333,147 +333,147 @@ impl<'a> InstrExecution<'a> {
     fn ld_m_s(&mut self, dest: M, src: S) -> &mut Self {
         self.read_s(src, |cpu| cpu)
             .write_m(dest)
-            .cycle(|cpu| cpu.fetch())
+            .cycle_old(|cpu| cpu.fetch())
     }
 
     fn ld_a_deref_bc(&mut self) -> &mut Self {
-        self.microinstruction(|cpu| cpu.bus_read(WordSelect::Bc).write_a())
-            .microinstruction(|cpu| cpu.fetch())
+        self.cycle(|cpu| cpu.bus_read(AddrSel::Bc).write_data(DataSel::R(R::A)))
+            .cycle(|cpu| cpu.fetch())
     }
 
     fn ld_a_deref_de(&mut self) -> &mut Self {
-        self.microinstruction(|cpu| cpu.bus_read(WordSelect::De).write_a())
-            .microinstruction(|cpu| cpu.fetch())
+        self.cycle(|cpu| cpu.bus_read(AddrSel::De).write_data(DataSel::R(R::A)))
+            .cycle(|cpu| cpu.fetch())
     }
 
     fn ld_a_deref_c(&mut self) -> &mut Self {
-        self.microinstruction(|cpu| cpu.bus_read(WordSelect::C).write_a())
-            .microinstruction(|cpu| cpu.fetch())
+        self.cycle(|cpu| cpu.bus_read(AddrSel::C).write_data(DataSel::R(R::A)))
+            .cycle(|cpu| cpu.fetch())
     }
 
     fn ld_deref_c_a(&mut self) -> &mut Self {
-        self.microinstruction(|cpu| cpu.bus_write(WordSelect::C, DataSel::R(R::A)))
-            .microinstruction(|cpu| cpu.fetch())
+        self.cycle(|cpu| cpu.bus_write(AddrSel::C, DataSel::R(R::A)))
+            .cycle(|cpu| cpu.fetch())
     }
 
     fn ld_a_deref_n(&mut self) -> &mut Self {
-        self.microinstruction(|cpu| cpu.read_immediate().write_data_buf())
-            .microinstruction(|cpu| cpu.bus_read(WordSelect::DataBuf).write_a())
-            .microinstruction(|cpu| cpu.fetch())
+        self.cycle(|cpu| cpu.read_immediate().write_data(DataSel::DataBuf))
+            .cycle(|cpu| cpu.bus_read(AddrSel::DataBuf).write_data(DataSel::R(R::A)))
+            .cycle(|cpu| cpu.fetch())
     }
 
     fn ld_deref_n_a(&mut self) -> &mut Self {
-        self.microinstruction(|cpu| cpu.read_immediate().write_data_buf())
-            .microinstruction(|cpu| cpu.bus_write(WordSelect::DataBuf, DataSel::R(R::A)))
-            .microinstruction(|cpu| cpu.fetch())
+        self.cycle(|cpu| cpu.read_immediate().write_data(DataSel::DataBuf))
+            .cycle(|cpu| cpu.bus_write(AddrSel::DataBuf, DataSel::R(R::A)))
+            .cycle(|cpu| cpu.fetch())
     }
 
     fn ld_a_deref_nn(&mut self) -> &mut Self {
-        self.microinstruction(|cpu| cpu.read_immediate().write_addr_l())
-            .microinstruction(|cpu| cpu.read_immediate().write_addr_h())
-            .microinstruction(|cpu| cpu.bus_read(WordSelect::AddrBuffer).write_a())
-            .microinstruction(|cpu| cpu.fetch())
+        self.cycle(|cpu| cpu.read_immediate().write_data(DataSel::AddrL))
+            .cycle(|cpu| cpu.read_immediate().write_data(DataSel::AddrH))
+            .cycle(|cpu| cpu.bus_read(AddrSel::AddrBuf).write_data(DataSel::R(R::A)))
+            .cycle(|cpu| cpu.fetch())
     }
 
     fn ld_deref_nn_a(&mut self) -> &mut Self {
-        self.microinstruction(|cpu| cpu.read_immediate().write_addr_l())
-            .microinstruction(|cpu| cpu.read_immediate().write_addr_h())
-            .microinstruction(|cpu| cpu.bus_write(WordSelect::AddrBuffer, DataSel::R(R::A)))
-            .microinstruction(|cpu| cpu.fetch())
+        self.cycle(|cpu| cpu.read_immediate().write_data(DataSel::AddrL))
+            .cycle(|cpu| cpu.read_immediate().write_data(DataSel::AddrH))
+            .cycle(|cpu| cpu.bus_write(AddrSel::AddrBuf, DataSel::R(R::A)))
+            .cycle(|cpu| cpu.fetch())
     }
 
     fn ld_a_deref_hli(&mut self) -> &mut Self {
-        self.microinstruction(|cpu| {
-            cpu.bus_read(WordSelect::Hl)
+        self.cycle(|cpu| {
+            cpu.bus_read(AddrSel::Hl)
                 .increment(WordWritebackDest::Hl)
-                .write_a()
+                .write_data(DataSel::R(R::A))
         })
-        .microinstruction(|cpu| cpu.fetch())
+        .cycle(|cpu| cpu.fetch())
     }
 
     fn ld_a_deref_hld(&mut self) -> &mut Self {
-        self.microinstruction(|cpu| {
-            cpu.bus_read(WordSelect::Hl)
+        self.cycle(|cpu| {
+            cpu.bus_read(AddrSel::Hl)
                 .decrement(WordWritebackDest::Hl)
-                .write_a()
+                .write_data(DataSel::R(R::A))
         })
-        .microinstruction(|cpu| cpu.fetch())
+        .cycle(|cpu| cpu.fetch())
     }
 
     fn ld_deref_bc_a(&mut self) -> &mut Self {
-        self.microinstruction(|cpu| cpu.bus_write(WordSelect::Bc, DataSel::R(R::A)))
-            .microinstruction(|cpu| cpu.fetch())
+        self.cycle(|cpu| cpu.bus_write(AddrSel::Bc, DataSel::R(R::A)))
+            .cycle(|cpu| cpu.fetch())
     }
 
     fn ld_deref_de_a(&mut self) -> &mut Self {
-        self.microinstruction(|cpu| cpu.bus_write(WordSelect::De, DataSel::R(R::A)))
-            .microinstruction(|cpu| cpu.fetch())
+        self.cycle(|cpu| cpu.bus_write(AddrSel::De, DataSel::R(R::A)))
+            .cycle(|cpu| cpu.fetch())
     }
 
     fn ld_deref_hli_a(&mut self) -> &mut Self {
-        self.microinstruction(|cpu| {
-            cpu.bus_write(WordSelect::Hl, DataSel::R(R::A))
+        self.cycle(|cpu| {
+            cpu.bus_write(AddrSel::Hl, DataSel::R(R::A))
                 .increment(WordWritebackDest::Hl)
         })
-        .microinstruction(|cpu| cpu.fetch())
+        .cycle(|cpu| cpu.fetch())
     }
 
     fn ld_deref_hld_a(&mut self) -> &mut Self {
-        self.microinstruction(|cpu| {
-            cpu.bus_write(WordSelect::Hl, DataSel::R(R::A))
+        self.cycle(|cpu| {
+            cpu.bus_write(AddrSel::Hl, DataSel::R(R::A))
                 .decrement(WordWritebackDest::Hl)
         })
-        .microinstruction(|cpu| cpu.fetch())
+        .cycle(|cpu| cpu.fetch())
     }
 
     fn ld_dd_nn(&mut self, dd: Dd) -> &mut Self {
-        self.microinstruction(|cpu| cpu.read_immediate().data_writeback(dd.low()))
-            .microinstruction(|cpu| cpu.read_immediate().data_writeback(dd.high()))
-            .microinstruction(|cpu| cpu.fetch())
+        self.cycle(|cpu| cpu.read_immediate().write_data(dd.low()))
+            .cycle(|cpu| cpu.read_immediate().write_data(dd.high()))
+            .cycle(|cpu| cpu.fetch())
     }
 
     fn ld_sp_hl(&mut self) -> &mut Self {
-        self.cycle(|cpu| cpu.bus_no_op())
-            .cycle(|cpu| cpu.write_dd(Dd::Sp, cpu.regs.hl()).fetch())
+        self.cycle_old(|cpu| cpu.bus_no_op())
+            .cycle_old(|cpu| cpu.write_dd(Dd::Sp, cpu.regs.hl()).fetch())
     }
 
     fn push_qq(&mut self, qq: Qq) -> &mut Self {
-        self.microinstruction(|cpu| {
-            cpu.select_addr(WordSelect::Sp)
+        self.cycle(|cpu| {
+            cpu.select_addr(AddrSel::Sp)
                 .decrement(WordWritebackDest::Sp)
         })
-        .microinstruction(|cpu| {
-            cpu.bus_write(WordSelect::Sp, qq.high())
+        .cycle(|cpu| {
+            cpu.bus_write(AddrSel::Sp, qq.high())
                 .decrement(WordWritebackDest::Sp)
         })
-        .microinstruction(|cpu| cpu.bus_write(WordSelect::Sp, qq.low()))
-        .microinstruction(|cpu| cpu.fetch())
+        .cycle(|cpu| cpu.bus_write(AddrSel::Sp, qq.low()))
+        .cycle(|cpu| cpu.fetch())
     }
 
     fn pop_qq(&mut self, qq: Qq) -> &mut Self {
-        self.microinstruction(|cpu| {
-            cpu.bus_read(WordSelect::Sp)
-                .data_writeback(qq.low())
+        self.cycle(|cpu| {
+            cpu.bus_read(AddrSel::Sp)
+                .write_data(qq.low())
                 .increment(WordWritebackDest::Sp)
         })
-        .microinstruction(|cpu| {
-            cpu.bus_read(WordSelect::Sp)
-                .data_writeback(qq.high())
+        .cycle(|cpu| {
+            cpu.bus_read(AddrSel::Sp)
+                .write_data(qq.high())
                 .increment(WordWritebackDest::Sp)
         })
-        .microinstruction(|cpu| cpu.fetch())
+        .cycle(|cpu| cpu.fetch())
     }
 
     fn ldhl_sp_e(&mut self) -> &mut Self {
-        self.cycle(|cpu| cpu.read_immediate())
-            .cycle(|cpu| {
+        self.cycle_old(|cpu| cpu.read_immediate())
+            .cycle_old(|cpu| {
                 let cpu = cpu.alu_op(AluOp::Add, low_byte(cpu.regs.sp), *cpu.data);
                 cpu.write_r(R::L, cpu.alu_result)
                     .on_tock(|cpu| cpu.alu_flags.z = false)
                     .write_f(ALL_FLAGS)
                     .bus_no_op()
             })
-            .cycle(|cpu| {
+            .cycle_old(|cpu| {
                 let cpu = cpu.alu_op(
                     AluOp::Adc,
                     high_byte(cpu.regs.sp),
@@ -484,14 +484,14 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ld_deref_nn_sp(&mut self) -> &mut Self {
-        self.microinstruction(|cpu| cpu.read_immediate().write_addr_l())
-            .microinstruction(|cpu| cpu.read_immediate().write_addr_h())
-            .microinstruction(|cpu| {
-                cpu.bus_write(WordSelect::AddrBuffer, DataSel::SpL)
-                    .increment(WordWritebackDest::AddrBuffer)
+        self.cycle(|cpu| cpu.read_immediate().write_data(DataSel::AddrL))
+            .cycle(|cpu| cpu.read_immediate().write_data(DataSel::AddrH))
+            .cycle(|cpu| {
+                cpu.bus_write(AddrSel::AddrBuf, DataSel::SpL)
+                    .increment(WordWritebackDest::AddrBuf)
             })
-            .microinstruction(|cpu| cpu.bus_write(WordSelect::AddrBuffer, DataSel::SpH))
-            .microinstruction(|cpu| cpu.fetch())
+            .cycle(|cpu| cpu.bus_write(AddrSel::AddrBuf, DataSel::SpH))
+            .cycle(|cpu| cpu.fetch())
     }
 
     fn alu_op(&mut self, op: AluOp, rhs: S) -> &mut Self {
@@ -501,7 +501,7 @@ impl<'a> InstrExecution<'a> {
                 cpu.write_r(R::A, cpu.alu_result);
                 cpu.write_f(ALL_FLAGS)
             })
-            .cycle(|cpu| cpu.fetch())
+            .cycle_old(|cpu| cpu.fetch())
     }
 
     fn inc_m(&mut self, m: M) -> &mut Self {
@@ -511,14 +511,14 @@ impl<'a> InstrExecution<'a> {
             cpu.write_f(flags!(z, n, h))
         })
         .write_m(m)
-        .cycle(|cpu| cpu.fetch())
+        .cycle_old(|cpu| cpu.fetch())
     }
 
     fn ret(&mut self) -> &mut Self {
-        self.microinstruction(|cpu| cpu.pop_byte().write_addr_l())
-            .microinstruction(|cpu| cpu.pop_byte().write_addr_h())
-            .microinstruction(|cpu| cpu.write_pc())
-            .microinstruction(|cpu| cpu.fetch())
+        self.cycle(|cpu| cpu.pop_byte().write_data(DataSel::AddrL))
+            .cycle(|cpu| cpu.pop_byte().write_data(DataSel::AddrH))
+            .cycle(|cpu| cpu.write_pc())
+            .cycle(|cpu| cpu.fetch())
     }
 
     fn read_s<F>(&mut self, s: S, f: F) -> &mut Self
@@ -527,19 +527,19 @@ impl<'a> InstrExecution<'a> {
     {
         match s {
             S::M(M::R(r)) => self.micro_op(|cpu| f(cpu.read_r(r))),
-            S::M(M::DerefHl) => self.cycle(|cpu| f(cpu.bus_read(cpu.regs.hl()))),
-            S::N => self.cycle(|cpu| f(cpu.read_immediate())),
+            S::M(M::DerefHl) => self.cycle_old(|cpu| f(cpu.bus_read(cpu.regs.hl()))),
+            S::N => self.cycle_old(|cpu| f(cpu.read_immediate())),
         }
     }
 
     fn write_m(&mut self, m: M) -> &mut Self {
         match m {
             M::R(r) => self.micro_op(|cpu| cpu.write_r(r, *cpu.data)),
-            M::DerefHl => self.cycle(|cpu| cpu.bus_write(cpu.regs.hl(), *cpu.data)),
+            M::DerefHl => self.cycle_old(|cpu| cpu.bus_write(cpu.regs.hl(), *cpu.data)),
         }
     }
 
-    fn cycle<F>(&mut self, f: F) -> &mut Self
+    fn cycle_old<F>(&mut self, f: F) -> &mut Self
     where
         F: for<'r, 's> FnOnce(&'s mut CpuProxy<'r>) -> &'s mut CpuProxy<'r>,
     {
@@ -567,7 +567,7 @@ impl<'a> InstrExecution<'a> {
         self
     }
 
-    fn microinstruction<F>(&mut self, f: F) -> &mut Self
+    fn cycle<F>(&mut self, f: F) -> &mut Self
     where
         F: FnOnce(&mut Microinstruction) -> &mut Microinstruction,
     {

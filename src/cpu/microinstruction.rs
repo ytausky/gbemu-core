@@ -2,7 +2,7 @@ use super::*;
 
 pub(super) struct Microinstruction {
     data_select: DataSel,
-    word_select: WordSelect,
+    word_select: AddrSel,
     byte_writeback: Option<ByteWriteback>,
     word_writeback: Option<WordWriteback>,
     bus_op_select: Option<BusOpSelect>,
@@ -19,13 +19,13 @@ pub(super) enum DataSel {
     AddrL,
 }
 
-pub(super) enum WordSelect {
+pub(super) enum AddrSel {
     Bc,
     De,
     Hl,
     Pc,
     Sp,
-    AddrBuffer,
+    AddrBuf,
     C,
     DataBuf,
 }
@@ -48,7 +48,7 @@ pub(super) enum WordWritebackDest {
     Hl,
     Pc,
     Sp,
-    AddrBuffer,
+    AddrBuf,
 }
 
 enum WordWritebackSrc {
@@ -67,7 +67,7 @@ impl Default for Microinstruction {
     fn default() -> Self {
         Self {
             data_select: DataSel::R(R::A),
-            word_select: WordSelect::Pc,
+            word_select: AddrSel::Pc,
             byte_writeback: None,
             word_writeback: None,
             bus_op_select: None,
@@ -78,7 +78,7 @@ impl Default for Microinstruction {
 
 impl Microinstruction {
     pub(super) fn read_immediate(&mut self) -> &mut Self {
-        self.word_select = WordSelect::Pc;
+        self.word_select = AddrSel::Pc;
         self.word_writeback = Some(WordWriteback {
             dest: WordWritebackDest::Pc,
             src: WordWritebackSrc::Inc,
@@ -88,7 +88,7 @@ impl Microinstruction {
     }
 
     pub(super) fn pop_byte(&mut self) -> &mut Self {
-        self.word_select = WordSelect::Sp;
+        self.word_select = AddrSel::Sp;
         self.word_writeback = Some(WordWriteback {
             dest: WordWritebackDest::Sp,
             src: WordWritebackSrc::Inc,
@@ -97,12 +97,12 @@ impl Microinstruction {
         self
     }
 
-    pub(super) fn bus_read(&mut self, addr_sel: WordSelect) -> &mut Self {
+    pub(super) fn bus_read(&mut self, addr_sel: AddrSel) -> &mut Self {
         self.bus_op_select = Some(BusOpSelect::Read);
         self.select_addr(addr_sel)
     }
 
-    pub(super) fn bus_write(&mut self, addr: WordSelect, data: DataSel) -> &mut Self {
+    pub(super) fn bus_write(&mut self, addr: AddrSel, data: DataSel) -> &mut Self {
         self.bus_op_select = Some(BusOpSelect::Write);
         self.select_addr(addr).select_data(data)
     }
@@ -112,7 +112,7 @@ impl Microinstruction {
         self
     }
 
-    pub(super) fn select_addr(&mut self, selector: WordSelect) -> &mut Self {
+    pub(super) fn select_addr(&mut self, selector: AddrSel) -> &mut Self {
         self.word_select = selector;
         self
     }
@@ -133,39 +133,7 @@ impl Microinstruction {
         self
     }
 
-    pub(super) fn write_a(&mut self) -> &mut Self {
-        self.byte_writeback = Some(ByteWriteback {
-            dest: DataSel::R(R::A),
-            src: ByteWritebackSrc::Bus,
-        });
-        self
-    }
-
-    pub(super) fn write_data_buf(&mut self) -> &mut Self {
-        self.byte_writeback = Some(ByteWriteback {
-            dest: DataSel::DataBuf,
-            src: ByteWritebackSrc::Bus,
-        });
-        self
-    }
-
-    pub(super) fn write_addr_l(&mut self) -> &mut Self {
-        self.byte_writeback = Some(ByteWriteback {
-            dest: DataSel::AddrL,
-            src: ByteWritebackSrc::Bus,
-        });
-        self
-    }
-
-    pub(super) fn write_addr_h(&mut self) -> &mut Self {
-        self.byte_writeback = Some(ByteWriteback {
-            dest: DataSel::AddrH,
-            src: ByteWritebackSrc::Bus,
-        });
-        self
-    }
-
-    pub(super) fn data_writeback(&mut self, dest: DataSel) -> &mut Self {
+    pub(super) fn write_data(&mut self, dest: DataSel) -> &mut Self {
         self.byte_writeback = Some(ByteWriteback {
             dest,
             src: ByteWritebackSrc::Bus,
@@ -182,7 +150,7 @@ impl Microinstruction {
     }
 
     pub(super) fn fetch(&mut self) -> &mut Self {
-        self.word_select = WordSelect::Pc;
+        self.word_select = AddrSel::Pc;
         self.word_writeback = Some(WordWriteback {
             dest: WordWritebackDest::Pc,
             src: WordWritebackSrc::Inc,
@@ -208,14 +176,14 @@ impl<'a> InstrExecution<'a> {
             DataSel::AddrL => low_byte(self.state.addr),
         };
         let addr = match microinstruction.word_select {
-            WordSelect::Bc => self.regs.bc(),
-            WordSelect::De => self.regs.de(),
-            WordSelect::Hl => self.regs.hl(),
-            WordSelect::Pc => self.regs.pc,
-            WordSelect::Sp => self.regs.sp,
-            WordSelect::AddrBuffer => self.state.addr,
-            WordSelect::C => 0xff00 | u16::from(self.regs.c),
-            WordSelect::DataBuf => 0xff00 | u16::from(self.state.data),
+            AddrSel::Bc => self.regs.bc(),
+            AddrSel::De => self.regs.de(),
+            AddrSel::Hl => self.regs.hl(),
+            AddrSel::Pc => self.regs.pc,
+            AddrSel::Sp => self.regs.sp,
+            AddrSel::AddrBuf => self.state.addr,
+            AddrSel::C => 0xff00 | u16::from(self.regs.c),
+            AddrSel::DataBuf => 0xff00 | u16::from(self.state.data),
         };
 
         if *self.phase == Tock {
@@ -248,7 +216,7 @@ impl<'a> InstrExecution<'a> {
                     }
                     WordWritebackDest::Pc => self.regs.pc = word,
                     WordWritebackDest::Sp => self.regs.sp = word,
-                    WordWritebackDest::AddrBuffer => self.state.addr = word,
+                    WordWritebackDest::AddrBuf => self.state.addr = word,
                 }
             }
 
