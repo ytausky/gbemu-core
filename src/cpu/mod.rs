@@ -392,8 +392,12 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ld_a_deref_hld(&mut self) -> &mut Self {
-        self.cycle(|cpu| cpu.bus_read(cpu.regs.hl()).decrement_hl())
-            .cycle(|cpu| cpu.write_r(R::A, *cpu.data).fetch())
+        self.microinstruction(|cpu| {
+            cpu.bus_read(WordSelect::Hl)
+                .decrement(WordWritebackDest::Hl)
+                .write_a()
+        })
+        .microinstruction(|cpu| cpu.fetch())
     }
 
     fn ld_deref_bc_a(&mut self) -> &mut Self {

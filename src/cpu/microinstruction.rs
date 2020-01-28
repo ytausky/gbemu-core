@@ -57,6 +57,7 @@ pub(super) enum WordWritebackDest {
 enum WordWritebackSrc {
     Addr,
     Inc,
+    Dec,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -123,6 +124,14 @@ impl Microinstruction {
         self.word_writeback = Some(WordWriteback {
             dest,
             src: WordWritebackSrc::Inc,
+        });
+        self
+    }
+
+    pub(super) fn decrement(&mut self, dest: WordWritebackDest) -> &mut Self {
+        self.word_writeback = Some(WordWriteback {
+            dest,
+            src: WordWritebackSrc::Dec,
         });
         self
     }
@@ -220,6 +229,7 @@ impl<'a> InstrExecution<'a> {
                 let word = match word_writeback.src {
                     WordWritebackSrc::Addr => self.state.addr,
                     WordWritebackSrc::Inc => addr + 1,
+                    WordWritebackSrc::Dec => addr - 1,
                 };
                 match word_writeback.dest {
                     WordWritebackDest::Hl => {
