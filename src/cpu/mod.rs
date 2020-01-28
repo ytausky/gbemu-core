@@ -406,8 +406,8 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ld_deref_de_a(&mut self) -> &mut Self {
-        self.cycle(|cpu| cpu.bus_write(cpu.regs.de(), cpu.regs.a))
-            .cycle(|cpu| cpu.fetch())
+        self.microinstruction(|cpu| cpu.bus_write(WordSelect::De, DataSelect::R(R::A)))
+            .microinstruction(|cpu| cpu.fetch())
     }
 
     fn ld_deref_hli_a(&mut self) -> &mut Self {
