@@ -1,4 +1,7 @@
-use super::{Qq, R};
+use super::R;
+
+#[cfg(test)]
+use super::Qq;
 
 use std::ops::{BitAnd, BitOr, Not};
 
@@ -85,6 +88,7 @@ impl Regs {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn write_qq_h(&mut self, qq: Qq, data: u8) {
         match qq {
             Qq::Bc => self.b = data,
@@ -94,6 +98,7 @@ impl Regs {
         }
     }
 
+    #[cfg(test)]
     pub(super) fn write_qq_l(&mut self, qq: Qq, data: u8) {
         match qq {
             Qq::Bc => self.c = data,

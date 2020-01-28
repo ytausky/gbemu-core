@@ -451,9 +451,17 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn pop_qq(&mut self, qq: Qq) -> &mut Self {
-        self.cycle(|cpu| cpu.bus_read(cpu.regs.sp).write_qq_l(qq).increment_sp())
-            .cycle(|cpu| cpu.bus_read(cpu.regs.sp).write_qq_h(qq).increment_sp())
-            .cycle(|cpu| cpu.fetch())
+        self.microinstruction(|cpu| {
+            cpu.bus_read(WordSelect::Sp)
+                .data_writeback(qq.low())
+                .increment(WordWritebackDest::Sp)
+        })
+        .microinstruction(|cpu| {
+            cpu.bus_read(WordSelect::Sp)
+                .data_writeback(qq.high())
+                .increment(WordWritebackDest::Sp)
+        })
+        .microinstruction(|cpu| cpu.fetch())
     }
 
     fn ldhl_sp_e(&mut self) -> &mut Self {
@@ -625,20 +633,8 @@ impl<'a> CpuProxy<'a> {
         })
     }
 
-    fn write_qq_h(&mut self, qq: Qq) -> &mut Self {
-        self.on_tock(|cpu| cpu.regs.write_qq_h(qq, *cpu.data))
-    }
-
-    fn write_qq_l(&mut self, qq: Qq) -> &mut Self {
-        self.on_tock(|cpu| cpu.regs.write_qq_l(qq, *cpu.data))
-    }
-
     fn increment_pc(&mut self) -> &mut Self {
         self.on_tock(|cpu| cpu.regs.pc += 1)
-    }
-
-    fn increment_sp(&mut self) -> &mut Self {
-        self.on_tock(|cpu| cpu.regs.sp += 1)
     }
 
     fn decode(&mut self) -> &mut Self {
