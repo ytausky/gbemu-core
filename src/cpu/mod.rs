@@ -369,10 +369,10 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ld_a_deref_nn(&mut self) -> &mut Self {
-        self.cycle(|cpu| cpu.read_immediate().write_addr_l())
-            .cycle(|cpu| cpu.read_immediate().write_addr_h())
-            .cycle(|cpu| cpu.bus_read(*cpu.addr))
-            .cycle(|cpu| cpu.write_r(R::A, *cpu.data).fetch())
+        self.microinstruction(|cpu| cpu.read_immediate().write_addr_l())
+            .microinstruction(|cpu| cpu.read_immediate().write_addr_h())
+            .microinstruction(|cpu| cpu.bus_read(WordSelect::AddrBuffer).write_a())
+            .microinstruction(|cpu| cpu.fetch())
     }
 
     fn ld_deref_nn_a(&mut self) -> &mut Self {
