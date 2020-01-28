@@ -376,10 +376,10 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ld_deref_nn_a(&mut self) -> &mut Self {
-        self.cycle(|cpu| cpu.read_immediate().write_addr_l())
-            .cycle(|cpu| cpu.read_immediate().write_addr_h())
-            .cycle(|cpu| cpu.bus_write(*cpu.addr, cpu.regs.a))
-            .cycle(|cpu| cpu.fetch())
+        self.microinstruction(|cpu| cpu.read_immediate().write_addr_l())
+            .microinstruction(|cpu| cpu.read_immediate().write_addr_h())
+            .microinstruction(|cpu| cpu.bus_write(WordSelect::AddrBuffer, DataSelect::R(R::A)))
+            .microinstruction(|cpu| cpu.fetch())
     }
 
     fn ld_a_deref_hli(&mut self) -> &mut Self {
