@@ -1,5 +1,5 @@
-use self::{MCycle::*, Phase::*};
 use self::microinstruction::*;
+use self::{MCycle::*, Phase::*};
 
 use std::ops::{BitAnd, BitOr, Not};
 
@@ -724,58 +724,6 @@ impl<'a> InstrExecution<'a> {
         self.sweep_m_cycle = self.sweep_m_cycle.next();
         self.output = self.output.take().or(output);
         self
-    }
-
-    fn execute_microinstruction(&mut self, microinstruction: &Microinstruction) -> CpuOutput {
-        let data = match microinstruction.data_select {
-            DataSelect::R(r) => *self.regs.select_r(r),
-            DataSelect::SpH => high_byte(self.regs.sp),
-            DataSelect::SpL => low_byte(self.regs.sp),
-        };
-        let addr = match microinstruction.word_select {
-            WordSelect::AddrBuffer => self.state.addr,
-            WordSelect::Pc => self.regs.pc,
-            WordSelect::Sp => self.regs.sp,
-        };
-
-        if *self.phase == Tock {
-            if let Some(byte_writeback) = &microinstruction.byte_writeback {
-                let byte = match byte_writeback.src {
-                    ByteWritebackSrc::Bus => self.input.data.unwrap(),
-                };
-                match byte_writeback.dest {
-                    ByteWritebackDest::AddrH => {
-                        self.state.addr = self.state.addr & 0x00ff | u16::from(byte) << 8
-                    }
-                    ByteWritebackDest::AddrL => {
-                        self.state.addr = self.state.addr & 0xff00 | u16::from(byte)
-                    }
-                }
-            }
-            if let Some(word_writeback) = &microinstruction.word_writeback {
-                let word = match word_writeback.src {
-                    WordWritebackSrc::Addr => self.state.addr,
-                    WordWritebackSrc::Inc => addr + 1,
-                };
-                match word_writeback.dest {
-                    WordWritebackDest::AddrBuffer => self.state.addr = word,
-                    WordWritebackDest::Pc => self.regs.pc = word,
-                    WordWritebackDest::Sp => self.regs.sp = word,
-                }
-            }
-
-            if microinstruction.write_opcode {
-                self.mode_transition = Some(ModeTransition::Run(Opcode(self.input.data.unwrap())))
-            }
-        }
-
-        microinstruction
-            .bus_op_select
-            .map(|op| match op {
-                BusOpSelect::Read => BusOp::Read(addr),
-                BusOpSelect::Write => BusOp::Write(addr, data),
-            })
-            .and_then(|op| if *self.phase == Tick { Some(op) } else { None })
     }
 
     fn cpu_proxy(&mut self) -> CpuProxy {
