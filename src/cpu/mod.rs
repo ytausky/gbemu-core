@@ -383,8 +383,12 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ld_a_deref_hli(&mut self) -> &mut Self {
-        self.cycle(|cpu| cpu.bus_read(cpu.regs.hl()).increment_hl())
-            .cycle(|cpu| cpu.write_r(R::A, *cpu.data).fetch())
+        self.microinstruction(|cpu| {
+            cpu.bus_read(WordSelect::Hl)
+                .increment(WordWritebackDest::Hl)
+                .write_a()
+        })
+        .microinstruction(|cpu| cpu.fetch())
     }
 
     fn ld_a_deref_hld(&mut self) -> &mut Self {

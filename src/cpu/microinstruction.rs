@@ -18,6 +18,7 @@ pub(super) enum DataSelect {
 pub(super) enum WordSelect {
     Bc,
     De,
+    Hl,
     Pc,
     Sp,
     AddrBuffer,
@@ -47,9 +48,10 @@ struct WordWriteback {
 }
 
 pub(super) enum WordWritebackDest {
-    AddrBuffer,
+    Hl,
     Pc,
     Sp,
+    AddrBuffer,
 }
 
 enum WordWritebackSrc {
@@ -190,6 +192,7 @@ impl<'a> InstrExecution<'a> {
         let addr = match microinstruction.word_select {
             WordSelect::Bc => self.regs.bc(),
             WordSelect::De => self.regs.de(),
+            WordSelect::Hl => self.regs.hl(),
             WordSelect::Pc => self.regs.pc,
             WordSelect::Sp => self.regs.sp,
             WordSelect::AddrBuffer => self.state.addr,
@@ -219,9 +222,13 @@ impl<'a> InstrExecution<'a> {
                     WordWritebackSrc::Inc => addr + 1,
                 };
                 match word_writeback.dest {
-                    WordWritebackDest::AddrBuffer => self.state.addr = word,
+                    WordWritebackDest::Hl => {
+                        self.regs.h = high_byte(word);
+                        self.regs.l = low_byte(word)
+                    }
                     WordWritebackDest::Pc => self.regs.pc = word,
                     WordWritebackDest::Sp => self.regs.sp = word,
+                    WordWritebackDest::AddrBuffer => self.state.addr = word,
                 }
             }
 
