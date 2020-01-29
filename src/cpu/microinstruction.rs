@@ -6,7 +6,7 @@ pub(super) struct Microinstruction {
     byte_writeback: Option<ByteWriteback>,
     word_writeback: Option<WordWriteback>,
     bus_op_select: Option<BusOpSelect>,
-    write_opcode: bool,
+    fetch: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -20,7 +20,7 @@ pub(super) enum DataSel {
     AddrL,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum AddrSel {
     Bc,
     De,
@@ -74,7 +74,7 @@ impl Default for Microinstruction {
             byte_writeback: None,
             word_writeback: None,
             bus_op_select: None,
-            write_opcode: false,
+            fetch: false,
         }
     }
 }
@@ -150,13 +150,7 @@ impl Microinstruction {
     }
 
     pub(super) fn fetch(&mut self) -> &mut Self {
-        self.word_select = AddrSel::Pc;
-        self.word_writeback = Some(WordWriteback {
-            dest: WordWritebackDest::Pc,
-            src: WordWritebackSrc::Inc,
-        });
-        self.bus_op_select = Some(BusOpSelect::Read);
-        self.write_opcode = true;
+        self.fetch = true;
         self
     }
 }
@@ -180,7 +174,12 @@ impl<'a> InstrExecution<'a> {
             self.data(microinstruction.data_select),
             self.addr(microinstruction.word_select),
         );
-        microinstruction.bus_op_select.map(|op| match op {
+        let effective_bus_op_sel = if self.should_fetch(microinstruction) {
+            Some(BusOpSelect::Read)
+        } else {
+            microinstruction.bus_op_select
+        };
+        effective_bus_op_sel.map(|op| match op {
             BusOpSelect::Read => BusOp::Read(addr),
             BusOpSelect::Write => BusOp::Write(addr, data),
         })
@@ -190,15 +189,10 @@ impl<'a> InstrExecution<'a> {
         &mut self,
         microinstruction: &Microinstruction,
     ) -> CpuOutput {
-        let (data, addr) = (
-            self.data(microinstruction.data_select),
-            self.addr(microinstruction.word_select),
-        );
-
         if let Some(byte_writeback) = &microinstruction.byte_writeback {
             let byte = match byte_writeback.src {
                 ByteWritebackSrc::Bus => self.input.data.unwrap(),
-                ByteWritebackSrc::Data => data,
+                ByteWritebackSrc::Data => self.data(microinstruction.data_select),
             };
             match byte_writeback.dest {
                 DataSel::R(r) => *self.regs.select_r_mut(r) = byte,
@@ -211,7 +205,18 @@ impl<'a> InstrExecution<'a> {
             }
         }
 
-        if let Some(word_writeback) = &microinstruction.word_writeback {
+        let effective_word_writeback = if self.should_fetch(microinstruction) {
+            assert_eq!(microinstruction.word_select, AddrSel::Pc);
+            &Some(WordWriteback {
+                dest: WordWritebackDest::Pc,
+                src: WordWritebackSrc::Inc,
+            })
+        } else {
+            &microinstruction.word_writeback
+        };
+
+        if let Some(word_writeback) = effective_word_writeback {
+            let addr = self.addr(microinstruction.word_select);
             let word = match word_writeback.src {
                 WordWritebackSrc::Addr => self.state.addr,
                 WordWritebackSrc::Inc => addr.wrapping_add(1),
@@ -228,7 +233,7 @@ impl<'a> InstrExecution<'a> {
             }
         }
 
-        if microinstruction.write_opcode {
+        if microinstruction.fetch {
             self.mode_transition = Some(ModeTransition::Run(Opcode(self.input.data.unwrap())))
         }
 
@@ -258,6 +263,10 @@ impl<'a> InstrExecution<'a> {
             AddrSel::C => 0xff00 | u16::from(self.regs.c),
             AddrSel::DataBuf => 0xff00 | u16::from(self.state.data),
         }
+    }
+
+    fn should_fetch(&self, microinstruction: &Microinstruction) -> bool {
+        microinstruction.fetch
     }
 }
 
