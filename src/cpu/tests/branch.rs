@@ -14,7 +14,6 @@ fn jp_nn() {
     )
 }
 
-#[ignore]
 #[test]
 fn jp_nz_nn_branching() {
     let mut cpu = Cpu::default();
@@ -29,7 +28,6 @@ fn jp_nz_nn_branching() {
     )
 }
 
-#[ignore]
 #[test]
 fn jp_nz_nn_non_branching() {
     let mut cpu = Cpu::default();

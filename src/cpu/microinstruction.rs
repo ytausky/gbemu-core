@@ -6,6 +6,7 @@ pub(super) struct Microinstruction {
     byte_writeback: Option<ByteWriteback>,
     word_writeback: Option<WordWriteback>,
     bus_op_select: Option<BusOpSelect>,
+    condition: Option<Cc>,
     fetch: bool,
 }
 
@@ -74,6 +75,7 @@ impl Default for Microinstruction {
             byte_writeback: None,
             word_writeback: None,
             bus_op_select: None,
+            condition: None,
             fetch: false,
         }
     }
@@ -151,6 +153,11 @@ impl Microinstruction {
 
     pub(super) fn fetch(&mut self) -> &mut Self {
         self.fetch = true;
+        self
+    }
+
+    pub(super) fn fetch_if_not(&mut self, cc: Cc) -> &mut Self {
+        self.condition = Some(cc);
         self
     }
 }
@@ -266,7 +273,19 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn should_fetch(&self, microinstruction: &Microinstruction) -> bool {
-        microinstruction.fetch
+        microinstruction
+            .condition
+            .map(|cc| !self.evaluate_condition(cc))
+            .unwrap_or(microinstruction.fetch)
+    }
+
+    fn evaluate_condition(&self, cc: Cc) -> bool {
+        match cc {
+            Cc::Nz => !self.regs.f.z,
+            Cc::Z => self.regs.f.z,
+            Cc::Nc => !self.regs.f.cy,
+            Cc::C => self.regs.f.cy,
+        }
     }
 }
 

@@ -141,6 +141,26 @@ impl From<u8> for Qq {
     }
 }
 
+#[derive(Clone, Copy)]
+enum Cc {
+    Nz,
+    Z,
+    Nc,
+    C,
+}
+
+impl From<u8> for Cc {
+    fn from(encoding: u8) -> Self {
+        match encoding {
+            0b00 => Cc::Nz,
+            0b01 => Cc::Z,
+            0b10 => Cc::Nc,
+            0b11 => Cc::C,
+            _ => panic!(),
+        }
+    }
+}
+
 #[derive(Clone)]
 enum AluOp {
     Add,
@@ -325,6 +345,7 @@ impl<'a> InstrExecution<'a> {
             (0b10, op, src) => self.alu_op(op.into(), S::M(src.into())),
             (0b11, dest, 0b001) if dest & 0b001 == 0 => self.pop_qq((dest >> 1).into()),
             (0b11, 0b000, 0b011) => self.jp_nn(),
+            (0b11, cc, 0b010) if cc <= 0b011 => self.jp_cc_nn(cc.into()),
             (0b11, src, 0b101) if src & 0b001 == 0 => self.push_qq((src >> 1).into()),
             (0b11, op, 0b110) => self.alu_op(op.into(), S::N),
             (0b11, 0b001, 0b001) => self.ret(),
@@ -627,6 +648,19 @@ impl<'a> InstrExecution<'a> {
                 .write_data(DataSel::AddrH, ByteWritebackSrc::Bus)
         })
         .cycle(|cpu| cpu.write_pc())
+        .cycle(|cpu| cpu.fetch())
+    }
+
+    fn jp_cc_nn(&mut self, cc: Cc) -> &mut Self {
+        self.cycle(|cpu| {
+            cpu.read_immediate()
+                .write_data(DataSel::AddrL, ByteWritebackSrc::Bus)
+        })
+        .cycle(|cpu| {
+            cpu.read_immediate()
+                .write_data(DataSel::AddrH, ByteWritebackSrc::Bus)
+        })
+        .cycle(|cpu| cpu.fetch_if_not(cc).write_pc())
         .cycle(|cpu| cpu.fetch())
     }
 
