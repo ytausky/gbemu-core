@@ -186,7 +186,10 @@ impl<'a> InstrExecution<'a> {
         })
     }
 
-    fn execute_microinstruction_on_tock(&mut self, microinstruction: &Microinstruction) -> CpuOutput {
+    fn execute_microinstruction_on_tock(
+        &mut self,
+        microinstruction: &Microinstruction,
+    ) -> CpuOutput {
         let (data, addr) = (
             self.data(microinstruction.data_select),
             self.addr(microinstruction.word_select),
@@ -203,9 +206,7 @@ impl<'a> InstrExecution<'a> {
                 DataSel::SpH => self.regs.sp = self.regs.sp & 0x00ff | u16::from(byte) << 8,
                 DataSel::SpL => self.regs.sp = self.regs.sp & 0xff00 | u16::from(byte),
                 DataSel::DataBuf => self.state.data = byte,
-                DataSel::AddrH => {
-                    self.state.addr = self.state.addr & 0x00ff | u16::from(byte) << 8
-                }
+                DataSel::AddrH => self.state.addr = self.state.addr & 0x00ff | u16::from(byte) << 8,
                 DataSel::AddrL => self.state.addr = self.state.addr & 0xff00 | u16::from(byte),
             }
         }

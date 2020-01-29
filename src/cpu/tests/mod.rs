@@ -1,6 +1,7 @@
 use super::*;
 
 mod alu;
+mod branch;
 mod ld;
 
 impl R {

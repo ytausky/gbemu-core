@@ -324,6 +324,7 @@ impl<'a> InstrExecution<'a> {
             (0b01, dest, src) => self.ld_r_r(dest.into(), src.into()),
             (0b10, op, src) => self.alu_op(op.into(), S::M(src.into())),
             (0b11, dest, 0b001) if dest & 0b001 == 0 => self.pop_qq((dest >> 1).into()),
+            (0b11, 0b000, 0b011) => self.jp_nn(),
             (0b11, src, 0b101) if src & 0b001 == 0 => self.push_qq((src >> 1).into()),
             (0b11, op, 0b110) => self.alu_op(op.into(), S::N),
             (0b11, 0b001, 0b001) => self.ret(),
@@ -614,6 +615,19 @@ impl<'a> InstrExecution<'a> {
         })
         .write_m(m)
         .cycle_old(|cpu| cpu.fetch())
+    }
+
+    fn jp_nn(&mut self) -> &mut Self {
+        self.cycle(|cpu| {
+            cpu.read_immediate()
+                .write_data(DataSel::AddrL, ByteWritebackSrc::Bus)
+        })
+        .cycle(|cpu| {
+            cpu.read_immediate()
+                .write_data(DataSel::AddrH, ByteWritebackSrc::Bus)
+        })
+        .cycle(|cpu| cpu.write_pc())
+        .cycle(|cpu| cpu.fetch())
     }
 
     fn ret(&mut self) -> &mut Self {
