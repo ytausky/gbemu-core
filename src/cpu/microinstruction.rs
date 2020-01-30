@@ -24,6 +24,12 @@ pub(super) enum DataSel {
     AddrL,
 }
 
+impl From<R> for DataSel {
+    fn from(r: R) -> Self {
+        DataSel::R(r)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum AddrSel {
     Bc,
@@ -135,13 +141,13 @@ impl Microinstruction {
         self.select_addr(addr_sel)
     }
 
-    pub(super) fn bus_write(&mut self, addr: AddrSel, data: DataSel) -> &mut Self {
+    pub(super) fn bus_write(&mut self, addr: AddrSel, data: impl Into<DataSel>) -> &mut Self {
         self.bus_op_select = Some(BusOpSelect::Write);
         self.select_addr(addr).select_data(data)
     }
 
-    pub(super) fn select_data(&mut self, selector: DataSel) -> &mut Self {
-        self.data_select = selector;
+    pub(super) fn select_data(&mut self, selector: impl Into<DataSel>) -> &mut Self {
+        self.data_select = selector.into();
         self
     }
 
@@ -155,9 +161,9 @@ impl Microinstruction {
         self
     }
 
-    pub(super) fn write_result(&mut self, dest: DataSel) -> &mut Self {
+    pub(super) fn write_result(&mut self, dest: impl Into<DataSel>) -> &mut Self {
         self.byte_writeback = Some(ByteWriteback {
-            dest,
+            dest: dest.into(),
             src: ByteWritebackSrc::Computation,
         });
         self
@@ -189,8 +195,19 @@ impl Microinstruction {
         self
     }
 
-    pub(super) fn write_data(&mut self, dest: DataSel, src: ByteWritebackSrc) -> &mut Self {
-        self.byte_writeback = Some(ByteWriteback { dest, src });
+    pub(super) fn write_from_bus_to(&mut self, dest: impl Into<DataSel>) -> &mut Self {
+        self.write_data(dest, ByteWritebackSrc::Bus)
+    }
+
+    pub(super) fn write_data(
+        &mut self,
+        dest: impl Into<DataSel>,
+        src: ByteWritebackSrc,
+    ) -> &mut Self {
+        self.byte_writeback = Some(ByteWriteback {
+            dest: dest.into(),
+            src,
+        });
         self
     }
 
