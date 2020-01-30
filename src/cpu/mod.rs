@@ -493,12 +493,15 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ld_sp_hl(&mut self) -> &mut Self {
-        self.cycle(|cpu| cpu.select_data(R::H).write_from_bus_to(DataSel::SpH))
-            .cycle(|cpu| {
-                cpu.select_data(R::L)
-                    .write_from_bus_to(DataSel::SpL)
-                    .fetch()
-            })
+        self.cycle(|cpu| {
+            cpu.select_data(R::H)
+                .write_data(DataSel::SpH, ByteWritebackSrc::Data)
+        })
+        .cycle(|cpu| {
+            cpu.select_data(R::L)
+                .write_data(DataSel::SpL, ByteWritebackSrc::Data)
+                .fetch()
+        })
     }
 
     fn push_qq(&mut self, qq: Qq) -> &mut Self {
