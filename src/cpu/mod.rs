@@ -351,6 +351,7 @@ impl<'a> InstrExecution<'a> {
             (0b11, 0b001, 0b001) => self.ret(),
             (0b11, 0b100, 0b000) => self.ld_deref_n_a(),
             (0b11, 0b100, 0b010) => self.ld_deref_c_a(),
+            (0b11, 0b101, 0b001) => self.jp_deref_hl(),
             (0b11, 0b101, 0b010) => self.ld_deref_nn_a(),
             (0b11, 0b110, 0b000) => self.ld_a_deref_n(),
             (0b11, 0b110, 0b010) => self.ld_a_deref_c(),
@@ -662,6 +663,10 @@ impl<'a> InstrExecution<'a> {
         })
         .cycle(|cpu| cpu.fetch_if_not(cc).write_pc())
         .cycle(|cpu| cpu.fetch())
+    }
+
+    fn jp_deref_hl(&mut self) -> &mut Self {
+        self.cycle(|cpu| cpu.select_addr(AddrSel::Hl).write_pc().fetch())
     }
 
     fn ret(&mut self) -> &mut Self {

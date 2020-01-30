@@ -214,7 +214,6 @@ impl<'a> InstrExecution<'a> {
 
         let fetch = self.should_fetch(microinstruction);
         let effective_word_writeback = if fetch {
-            assert_eq!(microinstruction.word_select, AddrSel::Pc);
             &Some(WordWriteback {
                 dest: WordWritebackDest::Pc,
                 src: WordWritebackSrc::Inc,
