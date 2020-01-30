@@ -47,11 +47,6 @@ struct ComplexInstrExecState {
     addr: u16,
 }
 
-#[derive(Clone)]
-enum S {
-    M(M),
-}
-
 #[derive(Clone, Copy)]
 enum M {
     R(R),
@@ -326,7 +321,8 @@ impl<'a> InstrExecution<'a> {
             (0b00, 0b000, 0b000) => self.nop(),
             (0b00, dest, 0b001) if dest & 0b001 == 0 => self.ld_dd_nn((dest >> 1).into()),
             (0b00, 0b000, 0b010) => self.ld_deref_bc_a(),
-            (0b00, operand, 0b100) => self.inc_m(operand.into()),
+            (0b00, 0b110, 0b100) => self.inc_deref_hl(),
+            (0b00, operand, 0b100) => self.inc_r(operand.into()),
             (0b00, 0b110, 0b110) => self.ld_deref_hl_n(),
             (0b00, dest, 0b110) => self.ld_r_n(dest.into()),
             (0b00, 0b001, 0b000) => self.ld_deref_nn_sp(),
@@ -364,7 +360,7 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn nop(&mut self) -> &mut Self {
-        self.cycle_old(|cpu| cpu.fetch())
+        self.cycle(|cpu| cpu.fetch())
     }
 
     fn halt(&mut self) -> &mut Self {
@@ -650,14 +646,25 @@ impl<'a> InstrExecution<'a> {
         .cycle(|cpu| cpu.fetch())
     }
 
-    fn inc_m(&mut self, m: M) -> &mut Self {
-        self.read_s(S::M(m), |cpu| {
-            cpu.alu_op(AluOp::Add, *cpu.data, 0x01);
-            cpu.on_tock(|cpu| *cpu.data = cpu.alu_result);
-            cpu.write_f(flags!(z, n, h))
+    fn inc_r(&mut self, r: R) -> &mut Self {
+        self.cycle(|cpu| {
+            cpu.select_data(DataSel::R(r))
+                .alu_op(AluOp::Add, AluOperand::Data, AluOperand::One)
+                .write_result(DataSel::R(r))
+                .write_flags(flags!(z, n, h))
+                .fetch()
         })
-        .write_m(m)
-        .cycle_old(|cpu| cpu.fetch())
+    }
+
+    fn inc_deref_hl(&mut self) -> &mut Self {
+        self.cycle(|cpu| {
+            cpu.bus_read(AddrSel::Hl)
+                .alu_op(AluOp::Add, AluOperand::Bus, AluOperand::One)
+                .write_result(DataSel::DataBuf)
+                .write_flags(flags!(z, n, h))
+        })
+        .cycle(|cpu| cpu.bus_write(AddrSel::Hl, DataSel::DataBuf))
+        .cycle(|cpu| cpu.fetch())
     }
 
     fn jp_nn(&mut self) -> &mut Self {
@@ -703,51 +710,6 @@ impl<'a> InstrExecution<'a> {
         .cycle(|cpu| cpu.fetch())
     }
 
-    fn read_s<F>(&mut self, s: S, f: F) -> &mut Self
-    where
-        F: for<'r, 's> FnOnce(&'s mut CpuProxy<'r>) -> &'s mut CpuProxy<'r>,
-    {
-        match s {
-            S::M(M::R(r)) => self.micro_op(|cpu| f(cpu.read_r(r))),
-            S::M(M::DerefHl) => self.cycle_old(|cpu| f(cpu.bus_read(cpu.regs.hl()))),
-        }
-    }
-
-    fn write_m(&mut self, m: M) -> &mut Self {
-        match m {
-            M::R(r) => self.micro_op(|cpu| cpu.write_r(r, *cpu.data)),
-            M::DerefHl => self.cycle_old(|cpu| cpu.bus_write(cpu.regs.hl(), *cpu.data)),
-        }
-    }
-
-    fn cycle_old<F>(&mut self, f: F) -> &mut Self
-    where
-        F: for<'r, 's> FnOnce(&'s mut CpuProxy<'r>) -> &'s mut CpuProxy<'r>,
-    {
-        let output = if self.state.m_cycle == self.sweep_m_cycle {
-            let mut cpu_proxy = self.cpu_proxy();
-            f(&mut cpu_proxy);
-            Some(cpu_proxy.output.unwrap())
-        } else {
-            None
-        };
-        self.sweep_m_cycle = self.sweep_m_cycle.next();
-        self.output = self.output.take().or(output);
-        self
-    }
-
-    fn micro_op<F>(&mut self, f: F) -> &mut Self
-    where
-        F: for<'r, 's> FnOnce(&'s mut CpuProxy<'r>) -> &'s mut CpuProxy<'r>,
-    {
-        if self.state.m_cycle == self.sweep_m_cycle {
-            let mut cpu_proxy = self.cpu_proxy();
-            f(&mut cpu_proxy);
-            assert_eq!(cpu_proxy.output, None)
-        }
-        self
-    }
-
     fn cycle<F>(&mut self, f: F) -> &mut Self
     where
         F: FnOnce(&mut Microinstruction) -> &mut Microinstruction,
@@ -761,109 +723,6 @@ impl<'a> InstrExecution<'a> {
         };
         self.sweep_m_cycle = self.sweep_m_cycle.next();
         self.output = self.output.take().or(output);
-        self
-    }
-
-    fn cpu_proxy(&mut self) -> CpuProxy {
-        CpuProxy {
-            regs: self.regs,
-            data: &mut self.state.data,
-            alu_result: 0xff,
-            alu_flags: Default::default(),
-            mode_transition: &mut self.mode_transition,
-            phase: *self.phase,
-            input: self.input,
-            output: None,
-        }
-    }
-}
-
-struct CpuProxy<'a> {
-    regs: &'a mut Regs,
-    data: &'a mut u8,
-    alu_result: u8,
-    alu_flags: Flags,
-    phase: Phase,
-    mode_transition: &'a mut Option<ModeTransition>,
-    input: &'a Input,
-    output: Option<CpuOutput>,
-}
-
-impl<'a> CpuProxy<'a> {
-    fn increment_pc(&mut self) -> &mut Self {
-        self.on_tock(|cpu| cpu.regs.pc += 1)
-    }
-
-    fn decode(&mut self) -> &mut Self {
-        self.on_tock(|cpu| *cpu.mode_transition = Some(ModeTransition::Run(Opcode(*cpu.data))))
-    }
-
-    fn fetch(&mut self) -> &mut Self {
-        self.bus_read(self.regs.pc).increment_pc().decode()
-    }
-
-    fn bus_read(&mut self, addr: u16) -> &mut Self {
-        self.output = Some(match self.phase {
-            Tick => Some(BusOp::Read(addr)),
-            Tock => {
-                *self.data = self.input.data.unwrap();
-                None
-            }
-        });
-        self
-    }
-
-    fn bus_write(&mut self, addr: u16, data: u8) -> &mut Self {
-        self.output = Some(match self.phase {
-            Tick => Some(BusOp::Write(addr, data)),
-            Tock => None,
-        });
-        self
-    }
-
-    fn read_r(&mut self, r: R) -> &mut Self {
-        self.on_tick(|cpu| *cpu.data = *cpu.regs.select_r(r))
-    }
-
-    fn write_r(&mut self, r: R, data: u8) -> &mut Self {
-        self.on_tock(|cpu| *cpu.regs.select_r_mut(r) = data)
-    }
-
-    fn write_f(&mut self, mask: Flags) -> &mut Self {
-        self.on_tock(|cpu| cpu.regs.f = cpu.regs.f & !mask | cpu.alu_flags & mask)
-    }
-
-    fn alu_op(&mut self, op: AluOp, lhs: u8, rhs: u8) -> &mut Self {
-        self.on_tock(|cpu| {
-            let (result, flags) = match op {
-                AluOp::Add => alu::add(lhs, rhs, false),
-                AluOp::Adc => alu::add(lhs, rhs, cpu.regs.f.cy),
-                AluOp::Sub => alu::sub(lhs, rhs, false),
-                AluOp::Sbc => alu::sub(lhs, rhs, cpu.regs.f.cy),
-                AluOp::And => alu::and(lhs, rhs),
-                AluOp::Xor => alu::xor(lhs, rhs),
-                AluOp::Or => alu::or(lhs, rhs),
-                AluOp::Cp => {
-                    let (_, flags) = alu::sub(lhs, rhs, false);
-                    (lhs, flags)
-                }
-            };
-            cpu.alu_result = result;
-            cpu.alu_flags = flags;
-        })
-    }
-
-    fn on_tick(&mut self, f: impl FnOnce(&mut Self)) -> &mut Self {
-        if self.phase == Tick {
-            f(self)
-        }
-        self
-    }
-
-    fn on_tock(&mut self, f: impl FnOnce(&mut Self)) -> &mut Self {
-        if self.phase == Tock {
-            f(self)
-        }
         self
     }
 }
