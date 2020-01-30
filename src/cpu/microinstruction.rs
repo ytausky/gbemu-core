@@ -3,8 +3,10 @@ use super::*;
 pub(super) struct Microinstruction {
     data_select: DataSel,
     word_select: AddrSel,
+    computation: Option<Computation>,
     byte_writeback: Option<ByteWriteback>,
     word_writeback: Option<WordWriteback>,
+    flag_mask: Flags,
     bus_op_select: Option<BusOpSelect>,
     condition: Option<Cc>,
     fetch: bool,
@@ -33,6 +35,23 @@ pub(super) enum AddrSel {
     DataBuf,
 }
 
+enum Computation {
+    Alu(AluComputation),
+}
+
+struct AluComputation {
+    op: AluOp,
+    lhs: AluOperand,
+    rhs: AluOperand,
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum AluOperand {
+    A,
+    Bus,
+    Data,
+}
+
 struct ByteWriteback {
     dest: DataSel,
     src: ByteWritebackSrc,
@@ -40,6 +59,7 @@ struct ByteWriteback {
 
 pub(super) enum ByteWritebackSrc {
     Bus,
+    Computation,
     Data,
 }
 
@@ -72,8 +92,10 @@ impl Default for Microinstruction {
         Self {
             data_select: DataSel::R(R::A),
             word_select: AddrSel::Pc,
+            computation: None,
             byte_writeback: None,
             word_writeback: None,
+            flag_mask: Default::default(),
             bus_op_select: None,
             condition: None,
             fetch: false,
@@ -119,6 +141,24 @@ impl Microinstruction {
 
     pub(super) fn select_addr(&mut self, selector: AddrSel) -> &mut Self {
         self.word_select = selector;
+        self
+    }
+
+    pub(super) fn alu_op(&mut self, op: AluOp, lhs: AluOperand, rhs: AluOperand) -> &mut Self {
+        self.computation = Some(Computation::Alu(AluComputation { op, lhs, rhs }));
+        self
+    }
+
+    pub(super) fn write_result(&mut self, dest: DataSel) -> &mut Self {
+        self.byte_writeback = Some(ByteWriteback {
+            dest,
+            src: ByteWritebackSrc::Computation,
+        });
+        self
+    }
+
+    pub(super) fn write_flags(&mut self, mask: Flags) -> &mut Self {
+        self.flag_mask = mask;
         self
     }
 
@@ -196,10 +236,19 @@ impl<'a> InstrExecution<'a> {
         &mut self,
         microinstruction: &Microinstruction,
     ) -> CpuOutput {
+        let data = self.data(microinstruction.data_select);
+        let mut updated_flags = Flags::default();
+        let result = microinstruction.computation.as_ref().map(|computation| {
+            let (result, flags) = self.perform_computation(computation, data);
+            updated_flags = flags;
+            result
+        });
+
         if let Some(byte_writeback) = &microinstruction.byte_writeback {
             let byte = match byte_writeback.src {
                 ByteWritebackSrc::Bus => self.input.data.unwrap(),
-                ByteWritebackSrc::Data => self.data(microinstruction.data_select),
+                ByteWritebackSrc::Computation => result.unwrap(),
+                ByteWritebackSrc::Data => data,
             };
             match byte_writeback.dest {
                 DataSel::R(r) => *self.regs.select_r_mut(r) = byte,
@@ -239,6 +288,9 @@ impl<'a> InstrExecution<'a> {
                 WordWritebackDest::AddrBuf => self.state.addr = word,
             }
         }
+
+        self.regs.f =
+            self.regs.f & !microinstruction.flag_mask | updated_flags & microinstruction.flag_mask;
 
         if fetch {
             self.mode_transition = Some(ModeTransition::Run(Opcode(self.input.data.unwrap())))
@@ -285,6 +337,42 @@ impl<'a> InstrExecution<'a> {
             Cc::Z => self.regs.f.z,
             Cc::Nc => !self.regs.f.cy,
             Cc::C => self.regs.f.cy,
+        }
+    }
+
+    fn perform_computation(&self, computation: &Computation, data: u8) -> (u8, Flags) {
+        match computation {
+            Computation::Alu(computation) => self.perform_alu_computation(computation, data),
+        }
+    }
+
+    fn perform_alu_computation(&self, computation: &AluComputation, data: u8) -> (u8, Flags) {
+        let lhs = self.alu_operand(computation.lhs, data);
+        let rhs = self.alu_operand(computation.rhs, data);
+        self.alu_op(computation.op, lhs, rhs)
+    }
+
+    fn alu_operand(&self, operand: AluOperand, data: u8) -> u8 {
+        match operand {
+            AluOperand::A => self.regs.a,
+            AluOperand::Bus => self.input.data.unwrap(),
+            AluOperand::Data => data,
+        }
+    }
+
+    fn alu_op(&self, op: AluOp, lhs: u8, rhs: u8) -> (u8, Flags) {
+        match op {
+            AluOp::Add => alu::add(lhs, rhs, false),
+            AluOp::Adc => alu::add(lhs, rhs, self.regs.f.cy),
+            AluOp::Sub => alu::sub(lhs, rhs, false),
+            AluOp::Sbc => alu::sub(lhs, rhs, self.regs.f.cy),
+            AluOp::And => alu::and(lhs, rhs),
+            AluOp::Xor => alu::xor(lhs, rhs),
+            AluOp::Or => alu::or(lhs, rhs),
+            AluOp::Cp => {
+                let (_, flags) = alu::sub(lhs, rhs, false);
+                (lhs, flags)
+            }
         }
     }
 }

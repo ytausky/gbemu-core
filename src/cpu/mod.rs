@@ -50,7 +50,6 @@ struct ComplexInstrExecState {
 #[derive(Clone)]
 enum S {
     M(M),
-    N,
 }
 
 #[derive(Clone, Copy)]
@@ -161,7 +160,7 @@ impl From<u8> for Cc {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Copy)]
 enum AluOp {
     Add,
     Adc,
@@ -342,12 +341,13 @@ impl<'a> InstrExecution<'a> {
             (0b01, dest, 0b110) => self.ld_r_deref_hl(dest.into()),
             (0b01, 0b110, src) => self.ld_deref_hl_r(src.into()),
             (0b01, dest, src) => self.ld_r_r(dest.into(), src.into()),
-            (0b10, op, src) => self.alu_op(op.into(), S::M(src.into())),
+            (0b10, op, 0b110) => self.alu_op_deref_hl(op.into()),
+            (0b10, op, src) => self.alu_op_r(op.into(), src.into()),
             (0b11, dest, 0b001) if dest & 0b001 == 0 => self.pop_qq((dest >> 1).into()),
             (0b11, 0b000, 0b011) => self.jp_nn(),
             (0b11, cc, 0b010) if cc <= 0b011 => self.jp_cc_nn(cc.into()),
             (0b11, src, 0b101) if src & 0b001 == 0 => self.push_qq((src >> 1).into()),
-            (0b11, op, 0b110) => self.alu_op(op.into(), S::N),
+            (0b11, op, 0b110) => self.alu_op_n(op.into()),
             (0b11, 0b001, 0b001) => self.ret(),
             (0b11, 0b100, 0b000) => self.ld_deref_n_a(),
             (0b11, 0b100, 0b010) => self.ld_deref_c_a(),
@@ -619,14 +619,34 @@ impl<'a> InstrExecution<'a> {
         .cycle(|cpu| cpu.fetch())
     }
 
-    fn alu_op(&mut self, op: AluOp, rhs: S) -> &mut Self {
-        self.read_s(rhs, |cpu| cpu)
-            .micro_op(|cpu| {
-                cpu.alu_op(op, cpu.regs.a, *cpu.data);
-                cpu.write_r(R::A, cpu.alu_result);
-                cpu.write_f(ALL_FLAGS)
-            })
-            .cycle_old(|cpu| cpu.fetch())
+    fn alu_op_r(&mut self, op: AluOp, r: R) -> &mut Self {
+        self.cycle(|cpu| {
+            cpu.select_data(DataSel::R(r))
+                .alu_op(op, AluOperand::A, AluOperand::Data)
+                .write_result(DataSel::R(R::A))
+                .write_flags(ALL_FLAGS)
+                .fetch()
+        })
+    }
+
+    fn alu_op_n(&mut self, op: AluOp) -> &mut Self {
+        self.cycle(|cpu| {
+            cpu.read_immediate()
+                .alu_op(op, AluOperand::A, AluOperand::Bus)
+                .write_result(DataSel::R(R::A))
+                .write_flags(ALL_FLAGS)
+        })
+        .cycle(|cpu| cpu.fetch())
+    }
+
+    fn alu_op_deref_hl(&mut self, op: AluOp) -> &mut Self {
+        self.cycle(|cpu| {
+            cpu.bus_read(AddrSel::Hl)
+                .alu_op(op, AluOperand::A, AluOperand::Bus)
+                .write_result(DataSel::R(R::A))
+                .write_flags(ALL_FLAGS)
+        })
+        .cycle(|cpu| cpu.fetch())
     }
 
     fn inc_m(&mut self, m: M) -> &mut Self {
@@ -689,7 +709,6 @@ impl<'a> InstrExecution<'a> {
         match s {
             S::M(M::R(r)) => self.micro_op(|cpu| f(cpu.read_r(r))),
             S::M(M::DerefHl) => self.cycle_old(|cpu| f(cpu.bus_read(cpu.regs.hl()))),
-            S::N => self.cycle_old(|cpu| f(cpu.read_immediate())),
         }
     }
 
