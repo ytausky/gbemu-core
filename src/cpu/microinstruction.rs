@@ -212,7 +212,8 @@ impl<'a> InstrExecution<'a> {
             }
         }
 
-        let effective_word_writeback = if self.should_fetch(microinstruction) {
+        let fetch = self.should_fetch(microinstruction);
+        let effective_word_writeback = if fetch {
             assert_eq!(microinstruction.word_select, AddrSel::Pc);
             &Some(WordWriteback {
                 dest: WordWritebackDest::Pc,
@@ -240,7 +241,7 @@ impl<'a> InstrExecution<'a> {
             }
         }
 
-        if microinstruction.fetch {
+        if fetch {
             self.mode_transition = Some(ModeTransition::Run(Opcode(self.input.data.unwrap())))
         }
 
