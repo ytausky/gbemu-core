@@ -6,6 +6,7 @@ pub(super) struct Microinstruction {
     computation: Option<Computation>,
     byte_writeback: Option<ByteWriteback>,
     word_writeback: Option<WordWriteback>,
+    reset_z: bool,
     flag_mask: Flags,
     bus_op_select: Option<BusOpSelect>,
     condition: Option<Cc>,
@@ -50,6 +51,9 @@ pub(super) enum AluOperand {
     A,
     Bus,
     Data,
+    SignExtension,
+    SpH,
+    SpL,
 }
 
 struct ByteWriteback {
@@ -95,6 +99,7 @@ impl Default for Microinstruction {
             computation: None,
             byte_writeback: None,
             word_writeback: None,
+            reset_z: false,
             flag_mask: Default::default(),
             bus_op_select: None,
             condition: None,
@@ -159,6 +164,11 @@ impl Microinstruction {
 
     pub(super) fn write_flags(&mut self, mask: Flags) -> &mut Self {
         self.flag_mask = mask;
+        self
+    }
+
+    pub(super) fn reset_z(&mut self) -> &mut Self {
+        self.reset_z = true;
         self
     }
 
@@ -289,6 +299,9 @@ impl<'a> InstrExecution<'a> {
             }
         }
 
+        if microinstruction.reset_z {
+            updated_flags.z = false;
+        }
         self.regs.f =
             self.regs.f & !microinstruction.flag_mask | updated_flags & microinstruction.flag_mask;
 
@@ -357,6 +370,9 @@ impl<'a> InstrExecution<'a> {
             AluOperand::A => self.regs.a,
             AluOperand::Bus => self.input.data.unwrap(),
             AluOperand::Data => data,
+            AluOperand::SignExtension => sign_extension(data),
+            AluOperand::SpH => high_byte(self.regs.sp),
+            AluOperand::SpL => low_byte(self.regs.sp),
         }
     }
 

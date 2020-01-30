@@ -584,22 +584,23 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ldhl_sp_e(&mut self) -> &mut Self {
-        self.cycle_old(|cpu| cpu.read_immediate())
-            .cycle_old(|cpu| {
-                let cpu = cpu.alu_op(AluOp::Add, low_byte(cpu.regs.sp), *cpu.data);
-                cpu.write_r(R::L, cpu.alu_result)
-                    .on_tock(|cpu| cpu.alu_flags.z = false)
-                    .write_f(ALL_FLAGS)
-                    .bus_no_op()
-            })
-            .cycle_old(|cpu| {
-                let cpu = cpu.alu_op(
-                    AluOp::Adc,
-                    high_byte(cpu.regs.sp),
-                    sign_extension(*cpu.data),
-                );
-                cpu.write_r(R::H, cpu.alu_result).fetch()
-            })
+        self.cycle(|cpu| {
+            cpu.read_immediate()
+                .write_data(DataSel::DataBuf, ByteWritebackSrc::Bus)
+        })
+        .cycle(|cpu| {
+            cpu.select_data(DataSel::DataBuf)
+                .alu_op(AluOp::Add, AluOperand::SpL, AluOperand::Data)
+                .write_result(DataSel::R(R::L))
+                .reset_z()
+                .write_flags(ALL_FLAGS)
+        })
+        .cycle(|cpu| {
+            cpu.select_data(DataSel::DataBuf)
+                .alu_op(AluOp::Adc, AluOperand::SpH, AluOperand::SignExtension)
+                .write_result(DataSel::R(R::H))
+                .fetch()
+        })
     }
 
     fn ld_deref_nn_sp(&mut self) -> &mut Self {
@@ -789,10 +790,6 @@ struct CpuProxy<'a> {
 }
 
 impl<'a> CpuProxy<'a> {
-    fn read_immediate(&mut self) -> &mut Self {
-        self.bus_read(self.regs.pc).increment_pc()
-    }
-
     fn increment_pc(&mut self) -> &mut Self {
         self.on_tock(|cpu| cpu.regs.pc += 1)
     }
@@ -803,11 +800,6 @@ impl<'a> CpuProxy<'a> {
 
     fn fetch(&mut self) -> &mut Self {
         self.bus_read(self.regs.pc).increment_pc().decode()
-    }
-
-    fn bus_no_op(&mut self) -> &mut Self {
-        self.output = Some(None);
-        self
     }
 
     fn bus_read(&mut self, addr: u16) -> &mut Self {
