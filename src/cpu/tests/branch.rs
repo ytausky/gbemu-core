@@ -119,7 +119,22 @@ fn jp_c_nn_non_branching_then_ret() {
 }
 
 #[test]
-fn jr_deref_hl() {
+fn jr_e() {
+    let mut cpu = Cpu::default();
+    cpu.regs.pc = 0x1000;
+    cpu.test_opcode(
+        &[0x18, 0x80],
+        &[
+            (Input::with_data(None), None),
+            (Input::with_data(None), None),
+            (Input::with_data(None), Some(BusOp::Read(0x1000 + 2 - 0x80))),
+            (Input::with_data(Some(0x00)), None),
+        ],
+    )
+}
+
+#[test]
+fn jp_deref_hl() {
     let mut cpu = Cpu::default();
     cpu.regs.h = 0x12;
     cpu.regs.l = 0x34;

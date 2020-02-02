@@ -328,6 +328,7 @@ impl<'a> InstrExecution<'a> {
             (0b00, 0b001, 0b000) => self.ld_deref_nn_sp(),
             (0b00, 0b001, 0b010) => self.ld_a_deref_bc(),
             (0b00, 0b010, 0b010) => self.ld_deref_de_a(),
+            (0b00, 0b011, 0b000) => self.jr_e(),
             (0b00, 0b011, 0b010) => self.ld_a_deref_de(),
             (0b00, 0b100, 0b010) => self.ld_deref_hli_a(),
             (0b00, 0b101, 0b010) => self.ld_a_deref_hli(),
@@ -622,6 +623,20 @@ impl<'a> InstrExecution<'a> {
             .cycle(|cpu| cpu.read_immediate().write_from_bus_to(DataSel::AddrH))
             .cycle(|cpu| cpu.fetch_if_not(cc).write_pc())
             .cycle(|cpu| cpu.fetch())
+    }
+
+    fn jr_e(&mut self) -> &mut Self {
+        self.cycle(|cpu| {
+            cpu.read_immediate()
+                .alu_op(AluOp::Add, AluOperand::PcL, AluOperand::Bus)
+                .write_data(DataSel::PcL, ByteWritebackSrc::Computation)
+        })
+        .cycle(|cpu| {
+            cpu.select_data(DataSel::DataBuf)
+                .alu_op(AluOp::Adc, AluOperand::PcH, AluOperand::SignExtension)
+                .write_data(DataSel::PcH, ByteWritebackSrc::Computation)
+        })
+        .cycle(|cpu| cpu.fetch())
     }
 
     fn jp_deref_hl(&mut self) -> &mut Self {
