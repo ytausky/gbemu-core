@@ -119,7 +119,7 @@ fn jp_c_nn_non_branching_then_ret() {
 }
 
 #[test]
-fn jr_e() {
+fn jr_e_min_value() {
     let mut cpu = Cpu::default();
     cpu.regs.pc = 0x1000;
     cpu.test_opcode(
@@ -128,6 +128,22 @@ fn jr_e() {
             (Input::with_data(None), None),
             (Input::with_data(None), None),
             (Input::with_data(None), Some(BusOp::Read(0x0f82))),
+            (Input::with_data(Some(0x00)), None),
+        ],
+    )
+}
+
+#[ignore]
+#[test]
+fn jr_e_with_carry() {
+    let mut cpu = Cpu::default();
+    cpu.regs.pc = 0x1080;
+    cpu.test_opcode(
+        &[0x18, 0x7e],
+        &[
+            (Input::with_data(None), None),
+            (Input::with_data(None), None),
+            (Input::with_data(None), Some(BusOp::Read(0x1100))),
             (Input::with_data(Some(0x00)), None),
         ],
     )
