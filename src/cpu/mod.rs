@@ -601,12 +601,12 @@ impl<'a> InstrExecution<'a> {
         self.cycle(|cpu| {
             cpu.read_immediate()
                 .alu_op(AluOp::Add, AluOperand::PcL, AluOperand::Bus)
-                .write_data(DataSel::PcL, ByteWritebackSrc::Computation)
+                .write_result(DataSel::PcL)
         })
         .cycle(|cpu| {
             cpu.select_data(DataSel::DataBuf)
                 .alu_op(AluOp::Adc, AluOperand::PcH, AluOperand::SignExtension)
-                .write_data(DataSel::PcH, ByteWritebackSrc::Computation)
+                .write_result(DataSel::PcH)
         })
         .cycle(|cpu| cpu.fetch())
     }
