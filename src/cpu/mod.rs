@@ -444,21 +444,13 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ld_a_deref_hli(&mut self) -> &mut Self {
-        self.cycle(|cpu| {
-            cpu.bus_read(AddrSel::Hl)
-                .increment(WordWritebackDest::Hl)
-                .write_from_bus_to(R::A)
-        })
-        .cycle(|cpu| cpu.fetch())
+        self.cycle(|cpu| cpu.bus_read(Hl).increment(Hl).write_from_bus_to(R::A))
+            .cycle(|cpu| cpu.fetch())
     }
 
     fn ld_a_deref_hld(&mut self) -> &mut Self {
-        self.cycle(|cpu| {
-            cpu.bus_read(AddrSel::Hl)
-                .decrement(WordWritebackDest::Hl)
-                .write_from_bus_to(R::A)
-        })
-        .cycle(|cpu| cpu.fetch())
+        self.cycle(|cpu| cpu.bus_read(Hl).decrement(Hl).write_from_bus_to(R::A))
+            .cycle(|cpu| cpu.fetch())
     }
 
     fn ld_deref_bc_a(&mut self) -> &mut Self {
@@ -472,19 +464,13 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ld_deref_hli_a(&mut self) -> &mut Self {
-        self.cycle(|cpu| {
-            cpu.bus_write(AddrSel::Hl, R::A)
-                .increment(WordWritebackDest::Hl)
-        })
-        .cycle(|cpu| cpu.fetch())
+        self.cycle(|cpu| cpu.bus_write(Hl, R::A).increment(Hl))
+            .cycle(|cpu| cpu.fetch())
     }
 
     fn ld_deref_hld_a(&mut self) -> &mut Self {
-        self.cycle(|cpu| {
-            cpu.bus_write(AddrSel::Hl, R::A)
-                .decrement(WordWritebackDest::Hl)
-        })
-        .cycle(|cpu| cpu.fetch())
+        self.cycle(|cpu| cpu.bus_write(Hl, R::A).decrement(Hl))
+            .cycle(|cpu| cpu.fetch())
     }
 
     fn ld_dd_nn(&mut self, dd: Dd) -> &mut Self {
@@ -506,30 +492,16 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn push_qq(&mut self, qq: Qq) -> &mut Self {
-        self.cycle(|cpu| {
-            cpu.select_addr(AddrSel::Sp)
-                .decrement(WordWritebackDest::Sp)
-        })
-        .cycle(|cpu| {
-            cpu.bus_write(AddrSel::Sp, qq.high())
-                .decrement(WordWritebackDest::Sp)
-        })
-        .cycle(|cpu| cpu.bus_write(AddrSel::Sp, qq.low()))
-        .cycle(|cpu| cpu.fetch())
+        self.cycle(|cpu| cpu.select_addr(Sp).decrement(Sp))
+            .cycle(|cpu| cpu.bus_write(Sp, qq.high()).decrement(Sp))
+            .cycle(|cpu| cpu.bus_write(Sp, qq.low()))
+            .cycle(|cpu| cpu.fetch())
     }
 
     fn pop_qq(&mut self, qq: Qq) -> &mut Self {
-        self.cycle(|cpu| {
-            cpu.bus_read(AddrSel::Sp)
-                .write_from_bus_to(qq.low())
-                .increment(WordWritebackDest::Sp)
-        })
-        .cycle(|cpu| {
-            cpu.bus_read(AddrSel::Sp)
-                .write_from_bus_to(qq.high())
-                .increment(WordWritebackDest::Sp)
-        })
-        .cycle(|cpu| cpu.fetch())
+        self.cycle(|cpu| cpu.bus_read(Sp).write_from_bus_to(qq.low()).increment(Sp))
+            .cycle(|cpu| cpu.bus_read(Sp).write_from_bus_to(qq.high()).increment(Sp))
+            .cycle(|cpu| cpu.fetch())
     }
 
     fn ldhl_sp_e(&mut self) -> &mut Self {

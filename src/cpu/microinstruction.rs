@@ -140,12 +140,16 @@ impl Microinstruction {
         self
     }
 
-    pub(super) fn bus_read(&mut self, addr_sel: AddrSel) -> &mut Self {
+    pub(super) fn bus_read(&mut self, addr_sel: impl Into<AddrSel>) -> &mut Self {
         self.bus_op_select = Some(BusOpSelect::Read);
         self.select_addr(addr_sel)
     }
 
-    pub(super) fn bus_write(&mut self, addr: AddrSel, data: impl Into<DataSel>) -> &mut Self {
+    pub(super) fn bus_write(
+        &mut self,
+        addr: impl Into<AddrSel>,
+        data: impl Into<DataSel>,
+    ) -> &mut Self {
         self.bus_op_select = Some(BusOpSelect::Write);
         self.select_addr(addr).select_data(data)
     }
@@ -155,8 +159,8 @@ impl Microinstruction {
         self
     }
 
-    pub(super) fn select_addr(&mut self, selector: AddrSel) -> &mut Self {
-        self.word_select = selector;
+    pub(super) fn select_addr(&mut self, selector: impl Into<AddrSel>) -> &mut Self {
+        self.word_select = selector.into();
         self
     }
 
@@ -183,17 +187,17 @@ impl Microinstruction {
         self
     }
 
-    pub(super) fn increment(&mut self, dest: WordWritebackDest) -> &mut Self {
+    pub(super) fn increment(&mut self, dest: impl Into<WordWritebackDest>) -> &mut Self {
         self.word_writeback = Some(WordWriteback {
-            dest,
+            dest: dest.into(),
             src: WordWritebackSrc::Inc,
         });
         self
     }
 
-    pub(super) fn decrement(&mut self, dest: WordWritebackDest) -> &mut Self {
+    pub(super) fn decrement(&mut self, dest: impl Into<WordWritebackDest>) -> &mut Self {
         self.word_writeback = Some(WordWriteback {
-            dest,
+            dest: dest.into(),
             src: WordWritebackSrc::Dec,
         });
         self
@@ -419,6 +423,34 @@ impl<'a> InstrExecution<'a> {
                 (lhs, flags)
             }
         }
+    }
+}
+
+pub(super) struct Hl;
+
+impl From<Hl> for AddrSel {
+    fn from(_: Hl) -> Self {
+        AddrSel::Hl
+    }
+}
+
+impl From<Hl> for WordWritebackDest {
+    fn from(_: Hl) -> Self {
+        WordWritebackDest::Hl
+    }
+}
+
+pub(super) struct Sp;
+
+impl From<Sp> for AddrSel {
+    fn from(_: Sp) -> Self {
+        AddrSel::Sp
+    }
+}
+
+impl From<Sp> for WordWritebackDest {
+    fn from(_: Sp) -> Self {
+        WordWritebackDest::Sp
     }
 }
 
