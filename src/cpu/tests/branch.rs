@@ -127,7 +127,7 @@ fn jr_e() {
         &[
             (Input::with_data(None), None),
             (Input::with_data(None), None),
-            (Input::with_data(None), Some(BusOp::Read(0x1000 + 2 - 0x80))),
+            (Input::with_data(None), Some(BusOp::Read(0x0f82))),
             (Input::with_data(Some(0x00)), None),
         ],
     )
