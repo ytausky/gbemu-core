@@ -1,7 +1,7 @@
-use self::microinstruction::*;
 use self::regs::{Flags, Regs};
 use self::{MCycle::*, Phase::*};
 
+#[cfg(test)]
 macro_rules! flags {
     ($($flag:ident),*) => {
         $crate::cpu::regs::Flags {
@@ -17,7 +17,6 @@ macro_rules! flags {
 }
 
 mod alu;
-mod microinstruction;
 mod regs;
 
 #[cfg(test)]
@@ -29,13 +28,6 @@ pub struct Cpu {
     phase: Phase,
 }
 
-const ALL_FLAGS: Flags = Flags {
-    z: true,
-    n: true,
-    h: true,
-    cy: true,
-};
-
 enum Mode {
     Run(ComplexInstrExecState),
 }
@@ -43,6 +35,8 @@ enum Mode {
 struct ComplexInstrExecState {
     opcode: Opcode,
     m_cycle: MCycle,
+    bus_data: Option<u8>,
+    fetch: bool,
     data: u8,
     addr: u16,
 }
@@ -230,6 +224,8 @@ impl Default for ComplexInstrExecState {
         Self {
             opcode: Opcode(0x00),
             m_cycle: M1,
+            bus_data: None,
+            fetch: false,
             data: 0xff,
             addr: 0xffff,
         }
@@ -269,6 +265,8 @@ impl From<ModeTransition> for Mode {
             ModeTransition::Run(opcode) => Mode::Run(ComplexInstrExecState {
                 opcode,
                 m_cycle: M1,
+                bus_data: None,
+                fetch: false,
                 data: 0xff,
                 addr: 0xffff,
             }),
@@ -361,7 +359,7 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn nop(&mut self) -> &mut Self {
-        self.cycle_old(|cpu| cpu.fetch())
+        self.cycle(|cpu| cpu.fetch())
     }
 
     fn halt(&mut self) -> &mut Self {
@@ -369,273 +367,427 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ld_r_r(&mut self, dest: R, src: R) -> &mut Self {
-        self.cycle_old(|cpu| {
-            cpu.select_data(src)
-                .write_data(dest, ByteWritebackSrc::Data)
-                .fetch()
+        self.cycle(|cpu| {
+            *cpu.regs.select_r_mut(dest) = *cpu.regs.select_r(src);
+            cpu.fetch()
         })
     }
 
     fn ld_r_n(&mut self, dest: R) -> &mut Self {
-        self.cycle_old(|cpu| cpu.read_immediate().write_from_bus_to(dest))
-            .cycle_old(|cpu| cpu.fetch())
+        self.cycle(|cpu| cpu.read_immediate()).cycle(|cpu| {
+            *cpu.regs.select_r_mut(dest) = cpu.state.bus_data.unwrap();
+            cpu.fetch()
+        })
     }
 
     fn ld_r_deref_hl(&mut self, dest: R) -> &mut Self {
-        self.cycle_old(|cpu| cpu.bus_read(AddrSel::Hl).write_from_bus_to(dest))
-            .cycle_old(|cpu| cpu.fetch())
+        self.cycle(|cpu| Some(BusOp::Read(cpu.regs.hl())))
+            .cycle(|cpu| {
+                *cpu.regs.select_r_mut(dest) = cpu.state.bus_data.unwrap();
+                cpu.fetch()
+            })
     }
 
     fn ld_deref_hl_r(&mut self, src: R) -> &mut Self {
-        self.cycle_old(|cpu| cpu.bus_write(AddrSel::Hl, src))
-            .cycle_old(|cpu| cpu.fetch())
+        self.cycle(|cpu| Some(BusOp::Write(cpu.regs.hl(), *cpu.regs.select_r(src))))
+            .cycle(|cpu| cpu.fetch())
     }
 
     fn ld_deref_hl_n(&mut self) -> &mut Self {
-        self.cycle_old(|cpu| cpu.read_immediate().write_from_bus_to(DataSel::DataBuf))
-            .cycle_old(|cpu| cpu.bus_write(AddrSel::Hl, DataSel::DataBuf))
-            .cycle_old(|cpu| cpu.fetch())
+        self.cycle(|cpu| cpu.read_immediate())
+            .cycle(|cpu| Some(BusOp::Write(cpu.regs.hl(), cpu.state.bus_data.unwrap())))
+            .cycle(|cpu| cpu.fetch())
     }
 
     fn ld_a_deref_bc(&mut self) -> &mut Self {
-        self.cycle_old(|cpu| cpu.bus_read(AddrSel::Bc).write_from_bus_to(R::A))
-            .cycle_old(|cpu| cpu.fetch())
+        self.cycle(|cpu| Some(BusOp::Read(cpu.regs.bc())))
+            .cycle(|cpu| {
+                cpu.regs.a = cpu.state.bus_data.unwrap();
+                cpu.fetch()
+            })
     }
 
     fn ld_a_deref_de(&mut self) -> &mut Self {
-        self.cycle_old(|cpu| cpu.bus_read(AddrSel::De).write_from_bus_to(R::A))
-            .cycle_old(|cpu| cpu.fetch())
+        self.cycle(|cpu| Some(BusOp::Read(cpu.regs.de())))
+            .cycle(|cpu| {
+                cpu.regs.a = cpu.state.bus_data.unwrap();
+                cpu.fetch()
+            })
     }
 
     fn ld_a_deref_c(&mut self) -> &mut Self {
-        self.cycle_old(|cpu| cpu.bus_read(AddrSel::C).write_from_bus_to(R::A))
-            .cycle_old(|cpu| cpu.fetch())
+        self.cycle(|cpu| Some(BusOp::Read(0xff00 | u16::from(cpu.regs.c))))
+            .cycle(|cpu| {
+                cpu.regs.a = cpu.state.bus_data.unwrap();
+                cpu.fetch()
+            })
     }
 
     fn ld_deref_c_a(&mut self) -> &mut Self {
-        self.cycle_old(|cpu| cpu.bus_write(AddrSel::C, R::A))
-            .cycle_old(|cpu| cpu.fetch())
+        self.cycle(|cpu| Some(BusOp::Write(0xff00 | u16::from(cpu.regs.c), cpu.regs.a)))
+            .cycle(|cpu| cpu.fetch())
     }
 
     fn ld_a_deref_n(&mut self) -> &mut Self {
-        self.cycle_old(|cpu| cpu.read_immediate().write_from_bus_to(DataSel::DataBuf))
-            .cycle_old(|cpu| cpu.bus_read(AddrSel::DataBuf).write_from_bus_to(R::A))
-            .cycle_old(|cpu| cpu.fetch())
+        self.cycle(|cpu| cpu.read_immediate())
+            .cycle(|cpu| Some(BusOp::Read(0xff00 | u16::from(cpu.state.bus_data.unwrap()))))
+            .cycle(|cpu| {
+                cpu.regs.a = cpu.state.bus_data.unwrap();
+                cpu.fetch()
+            })
     }
 
     fn ld_deref_n_a(&mut self) -> &mut Self {
-        self.cycle_old(|cpu| cpu.read_immediate().write_from_bus_to(DataSel::DataBuf))
-            .cycle_old(|cpu| cpu.bus_write(AddrSel::DataBuf, R::A))
-            .cycle_old(|cpu| cpu.fetch())
+        self.cycle(|cpu| cpu.read_immediate())
+            .cycle(|cpu| {
+                Some(BusOp::Write(
+                    0xff00 | u16::from(cpu.state.bus_data.unwrap()),
+                    cpu.regs.a,
+                ))
+            })
+            .cycle(|cpu| cpu.fetch())
     }
 
     fn ld_a_deref_nn(&mut self) -> &mut Self {
-        self.cycle_old(|cpu| cpu.read_immediate().write_from_bus_to(DataSel::AddrL))
-            .cycle_old(|cpu| cpu.read_immediate().write_from_bus_to(DataSel::AddrH))
-            .cycle_old(|cpu| cpu.bus_read(AddrSel::AddrBuf).write_from_bus_to(R::A))
-            .cycle_old(|cpu| cpu.fetch())
+        self.cycle(|cpu| cpu.read_immediate())
+            .cycle(|cpu| {
+                cpu.state.data = cpu.state.bus_data.unwrap();
+                cpu.read_immediate()
+            })
+            .cycle(|cpu| {
+                Some(BusOp::Read(
+                    u16::from(cpu.state.bus_data.unwrap()) << 8 | u16::from(cpu.state.data),
+                ))
+            })
+            .cycle(|cpu| {
+                cpu.regs.a = cpu.state.bus_data.unwrap();
+                cpu.fetch()
+            })
     }
 
     fn ld_deref_nn_a(&mut self) -> &mut Self {
-        self.cycle_old(|cpu| cpu.read_immediate().write_from_bus_to(DataSel::AddrL))
-            .cycle_old(|cpu| cpu.read_immediate().write_from_bus_to(DataSel::AddrH))
-            .cycle_old(|cpu| cpu.bus_write(AddrSel::AddrBuf, R::A))
-            .cycle_old(|cpu| cpu.fetch())
+        self.cycle(|cpu| cpu.read_immediate())
+            .cycle(|cpu| {
+                cpu.state.data = cpu.state.bus_data.unwrap();
+                cpu.read_immediate()
+            })
+            .cycle(|cpu| {
+                Some(BusOp::Write(
+                    u16::from(cpu.state.bus_data.unwrap()) << 8 | u16::from(cpu.state.data),
+                    cpu.regs.a,
+                ))
+            })
+            .cycle(|cpu| cpu.fetch())
     }
 
     fn ld_a_deref_hli(&mut self) -> &mut Self {
-        self.cycle_old(|cpu| cpu.bus_read(Hl).increment(Hl).write_from_bus_to(R::A))
-            .cycle_old(|cpu| cpu.fetch())
+        self.cycle(|cpu| {
+            let hl = cpu.regs.hl();
+            let incremented_hl = hl + 1;
+            cpu.regs.h = high_byte(incremented_hl);
+            cpu.regs.l = low_byte(incremented_hl);
+            Some(BusOp::Read(hl))
+        })
+        .cycle(|cpu| {
+            cpu.regs.a = cpu.state.bus_data.unwrap();
+            cpu.fetch()
+        })
     }
 
     fn ld_a_deref_hld(&mut self) -> &mut Self {
-        self.cycle_old(|cpu| cpu.bus_read(Hl).decrement(Hl).write_from_bus_to(R::A))
-            .cycle_old(|cpu| cpu.fetch())
+        self.cycle(|cpu| {
+            let hl = cpu.regs.hl();
+            let decremented_hl = hl - 1;
+            cpu.regs.h = high_byte(decremented_hl);
+            cpu.regs.l = low_byte(decremented_hl);
+            Some(BusOp::Read(hl))
+        })
+        .cycle(|cpu| {
+            cpu.regs.a = cpu.state.bus_data.unwrap();
+            cpu.fetch()
+        })
     }
 
     fn ld_deref_bc_a(&mut self) -> &mut Self {
-        self.cycle_old(|cpu| cpu.bus_write(AddrSel::Bc, R::A))
-            .cycle_old(|cpu| cpu.fetch())
+        self.cycle(|cpu| Some(BusOp::Write(cpu.regs.bc(), cpu.regs.a)))
+            .cycle(|cpu| cpu.fetch())
     }
 
     fn ld_deref_de_a(&mut self) -> &mut Self {
-        self.cycle_old(|cpu| cpu.bus_write(AddrSel::De, R::A))
-            .cycle_old(|cpu| cpu.fetch())
+        self.cycle(|cpu| Some(BusOp::Write(cpu.regs.de(), cpu.regs.a)))
+            .cycle(|cpu| cpu.fetch())
     }
 
     fn ld_deref_hli_a(&mut self) -> &mut Self {
-        self.cycle_old(|cpu| cpu.bus_write(Hl, R::A).increment(Hl))
-            .cycle_old(|cpu| cpu.fetch())
+        self.cycle(|cpu| {
+            let hl = cpu.regs.hl();
+            let incremented_hl = hl.wrapping_add(1);
+            cpu.regs.h = high_byte(incremented_hl);
+            cpu.regs.l = low_byte(incremented_hl);
+            Some(BusOp::Write(hl, cpu.regs.a))
+        })
+        .cycle(|cpu| cpu.fetch())
     }
 
     fn ld_deref_hld_a(&mut self) -> &mut Self {
-        self.cycle_old(|cpu| cpu.bus_write(Hl, R::A).decrement(Hl))
-            .cycle_old(|cpu| cpu.fetch())
+        self.cycle(|cpu| {
+            let hl = cpu.regs.hl();
+            let decremented_hl = hl - 1;
+            cpu.regs.h = high_byte(decremented_hl);
+            cpu.regs.l = low_byte(decremented_hl);
+            Some(BusOp::Write(hl, cpu.regs.a))
+        })
+        .cycle(|cpu| cpu.fetch())
     }
 
     fn ld_dd_nn(&mut self, dd: Dd) -> &mut Self {
-        self.cycle_old(|cpu| cpu.read_immediate().write_from_bus_to(dd.low()))
-            .cycle_old(|cpu| cpu.read_immediate().write_from_bus_to(dd.high()))
-            .cycle_old(|cpu| cpu.fetch())
+        self.cycle(|cpu| cpu.read_immediate())
+            .cycle(|cpu| {
+                cpu.regs.write(dd.low(), cpu.state.bus_data.unwrap());
+                cpu.read_immediate()
+            })
+            .cycle(|cpu| {
+                cpu.regs.write(dd.high(), cpu.state.bus_data.unwrap());
+                cpu.fetch()
+            })
     }
 
     fn ld_sp_hl(&mut self) -> &mut Self {
-        self.cycle_old(|cpu| {
-            cpu.select_data(R::H)
-                .write_data(DataSel::SpH, ByteWritebackSrc::Data)
+        self.cycle(|cpu| {
+            cpu.regs.sp = cpu.regs.hl();
+            None
         })
-        .cycle_old(|cpu| {
-            cpu.select_data(R::L)
-                .write_data(DataSel::SpL, ByteWritebackSrc::Data)
-                .fetch()
-        })
+        .cycle(|cpu| cpu.fetch())
     }
 
     fn push_qq(&mut self, qq: Qq) -> &mut Self {
-        self.cycle_old(|cpu| cpu.select_addr(Sp).decrement(Sp))
-            .cycle_old(|cpu| cpu.bus_write(Sp, qq.high()).decrement(Sp))
-            .cycle_old(|cpu| cpu.bus_write(Sp, qq.low()))
-            .cycle_old(|cpu| cpu.fetch())
+        self.cycle(|_| None)
+            .cycle(|cpu| cpu.push_byte(cpu.regs.read_qq_h(qq)))
+            .cycle(|cpu| cpu.push_byte(cpu.regs.read_qq_l(qq)))
+            .cycle(|cpu| cpu.fetch())
     }
 
     fn pop_qq(&mut self, qq: Qq) -> &mut Self {
-        self.cycle_old(|cpu| cpu.bus_read(Sp).write_from_bus_to(qq.low()).increment(Sp))
-            .cycle_old(|cpu| cpu.bus_read(Sp).write_from_bus_to(qq.high()).increment(Sp))
-            .cycle_old(|cpu| cpu.fetch())
+        self.cycle(|cpu| cpu.pop_byte())
+            .cycle(|cpu| {
+                cpu.regs.write(qq.low(), cpu.state.bus_data.unwrap());
+                cpu.pop_byte()
+            })
+            .cycle(|cpu| {
+                cpu.regs.write(qq.high(), cpu.state.bus_data.unwrap());
+                cpu.fetch()
+            })
     }
 
     fn ldhl_sp_e(&mut self) -> &mut Self {
-        self.cycle_old(|cpu| cpu.read_immediate().write_from_bus_to(DataSel::DataBuf))
-            .cycle_old(|cpu| {
-                cpu.select_data(DataSel::DataBuf)
-                    .alu_op(AluOp::Add, AluOperand::SpL, AluOperand::Data)
-                    .write_result(R::L)
-                    .reset_z()
-                    .write_flags(ALL_FLAGS)
+        self.cycle(|cpu| cpu.read_immediate())
+            .cycle(|cpu| {
+                let e = cpu.state.bus_data.unwrap();
+                let (l, flags) = alu::add(low_byte(cpu.regs.sp), e, false);
+                let (h, _) = alu::add(high_byte(cpu.regs.sp), sign_extension(e), flags.cy);
+                cpu.regs.h = h;
+                cpu.regs.l = l;
+                cpu.regs.f = flags;
+                cpu.regs.f.z = false;
+                None
             })
-            .cycle_old(|cpu| {
-                cpu.select_data(DataSel::DataBuf)
-                    .alu_op(AluOp::Adc, AluOperand::SpH, AluOperand::SignExtension)
-                    .write_result(R::H)
-                    .fetch()
-            })
+            .cycle(|cpu| cpu.fetch())
     }
 
     fn ld_deref_nn_sp(&mut self) -> &mut Self {
-        self.cycle_old(|cpu| cpu.read_immediate().write_from_bus_to(DataSel::AddrL))
-            .cycle_old(|cpu| cpu.read_immediate().write_from_bus_to(DataSel::AddrH))
-            .cycle_old(|cpu| {
-                cpu.bus_write(AddrSel::AddrBuf, DataSel::SpL)
-                    .increment(WordWritebackDest::AddrBuf)
+        self.cycle(|cpu| cpu.read_immediate())
+            .cycle(|cpu| {
+                cpu.state.addr = cpu.state.bus_data.unwrap() as u16;
+                cpu.read_immediate()
             })
-            .cycle_old(|cpu| cpu.bus_write(AddrSel::AddrBuf, DataSel::SpH))
-            .cycle_old(|cpu| cpu.fetch())
+            .cycle(|cpu| {
+                cpu.state.addr |= (cpu.state.bus_data.unwrap() as u16) << 8;
+                Some(BusOp::Write(cpu.state.addr, low_byte(cpu.regs.sp)))
+            })
+            .cycle(|cpu| Some(BusOp::Write(cpu.state.addr + 1, high_byte(cpu.regs.sp))))
+            .cycle(|cpu| cpu.fetch())
     }
 
     fn alu_op_r(&mut self, op: AluOp, r: R) -> &mut Self {
-        self.cycle_old(|cpu| {
-            cpu.select_data(r)
-                .alu_op(op, AluOperand::A, AluOperand::Data)
-                .write_result(R::A)
-                .write_flags(ALL_FLAGS)
-                .fetch()
+        self.cycle(|cpu| {
+            let (result, flags) = cpu.alu_op(op, cpu.regs.a, *cpu.regs.select_r(r));
+            cpu.regs.a = result;
+            cpu.regs.f = flags;
+            cpu.fetch()
         })
     }
 
     fn alu_op_n(&mut self, op: AluOp) -> &mut Self {
-        self.cycle_old(|cpu| {
-            cpu.read_immediate()
-                .alu_op(op, AluOperand::A, AluOperand::Bus)
-                .write_result(R::A)
-                .write_flags(ALL_FLAGS)
+        self.cycle(|cpu| cpu.read_immediate()).cycle(|cpu| {
+            let (result, flags) = cpu.alu_op(op, cpu.regs.a, cpu.state.bus_data.unwrap());
+            cpu.regs.a = result;
+            cpu.regs.f = flags;
+            cpu.fetch()
         })
-        .cycle_old(|cpu| cpu.fetch())
     }
 
     fn alu_op_deref_hl(&mut self, op: AluOp) -> &mut Self {
-        self.cycle_old(|cpu| {
-            cpu.bus_read(AddrSel::Hl)
-                .alu_op(op, AluOperand::A, AluOperand::Bus)
-                .write_result(R::A)
-                .write_flags(ALL_FLAGS)
-        })
-        .cycle_old(|cpu| cpu.fetch())
+        self.cycle(|cpu| Some(BusOp::Read(cpu.regs.hl())))
+            .cycle(|cpu| {
+                let (result, flags) = cpu.alu_op(op, cpu.regs.a, cpu.state.bus_data.unwrap());
+                cpu.regs.a = result;
+                cpu.regs.f = flags;
+                cpu.fetch()
+            })
     }
 
     fn inc_r(&mut self, r: R) -> &mut Self {
-        self.cycle_old(|cpu| {
-            cpu.select_data(DataSel::R(r))
-                .alu_op(AluOp::Add, AluOperand::Data, AluOperand::One)
-                .write_result(DataSel::R(r))
-                .write_flags(flags!(z, n, h))
-                .fetch()
+        self.cycle(|cpu| {
+            let (result, flags) = alu::add(*cpu.regs.select_r(r), 1, false);
+            *cpu.regs.select_r_mut(r) = result;
+            cpu.regs.f.z = flags.z;
+            cpu.regs.f.n = flags.n;
+            cpu.regs.f.h = flags.h;
+            cpu.fetch()
         })
     }
 
     fn inc_deref_hl(&mut self) -> &mut Self {
-        self.cycle_old(|cpu| {
-            cpu.bus_read(AddrSel::Hl)
-                .alu_op(AluOp::Add, AluOperand::Bus, AluOperand::One)
-                .write_result(DataSel::DataBuf)
-                .write_flags(flags!(z, n, h))
-        })
-        .cycle_old(|cpu| cpu.bus_write(AddrSel::Hl, DataSel::DataBuf))
-        .cycle_old(|cpu| cpu.fetch())
+        self.cycle(|cpu| Some(BusOp::Read(cpu.regs.hl())))
+            .cycle(|cpu| {
+                let (result, flags) = alu::add(cpu.state.bus_data.unwrap(), 1, false);
+                cpu.regs.f.z = flags.z;
+                cpu.regs.f.n = flags.n;
+                cpu.regs.f.h = flags.h;
+                Some(BusOp::Write(cpu.regs.hl(), result))
+            })
+            .cycle(|cpu| cpu.fetch())
     }
 
     fn jp_nn(&mut self) -> &mut Self {
-        self.cycle_old(|cpu| cpu.read_immediate().write_from_bus_to(DataSel::AddrL))
-            .cycle_old(|cpu| cpu.read_immediate().write_from_bus_to(DataSel::AddrH))
-            .cycle_old(|cpu| cpu.write_pc())
-            .cycle_old(|cpu| cpu.fetch())
+        self.cycle(|cpu| cpu.read_immediate())
+            .cycle(|cpu| {
+                cpu.state.data = cpu.state.bus_data.unwrap();
+                cpu.read_immediate()
+            })
+            .cycle(|cpu| {
+                cpu.regs.pc = (cpu.state.bus_data.unwrap() as u16) << 8 | cpu.state.data as u16;
+                None
+            })
+            .cycle(|cpu| cpu.fetch())
     }
 
     fn jp_cc_nn(&mut self, cc: Cc) -> &mut Self {
-        self.cycle_old(|cpu| cpu.read_immediate().write_from_bus_to(DataSel::AddrL))
-            .cycle_old(|cpu| cpu.read_immediate().write_from_bus_to(DataSel::AddrH))
-            .cycle_old(|cpu| cpu.fetch_if_not(cc).write_pc())
-            .cycle_old(|cpu| cpu.fetch())
+        self.cycle(|cpu| cpu.read_immediate())
+            .cycle(|cpu| {
+                cpu.state.data = cpu.state.bus_data.unwrap();
+                cpu.read_immediate()
+            })
+            .cycle(|cpu| {
+                if cpu.evaluate_condition(cc) {
+                    cpu.regs.pc = (cpu.state.bus_data.unwrap() as u16) << 8 | cpu.state.data as u16;
+                    None
+                } else {
+                    cpu.fetch()
+                }
+            })
+            .cycle(|cpu| cpu.fetch())
     }
 
     fn jr_e(&mut self) -> &mut Self {
-        self.cycle_old(|cpu| {
-            cpu.read_immediate()
-                .alu_op(AluOp::Add, AluOperand::PcL, AluOperand::Bus)
-                .write_result(DataSel::PcL)
-        })
-        .cycle_old(|cpu| {
-            cpu.select_data(DataSel::DataBuf)
-                .alu_op(AluOp::Adc, AluOperand::PcH, AluOperand::SignExtension)
-                .write_result(DataSel::PcH)
-        })
-        .cycle_old(|cpu| cpu.fetch())
+        self.cycle(|cpu| cpu.read_immediate())
+            .cycle(|cpu| {
+                let e = cpu.state.bus_data.unwrap() as i8;
+                cpu.regs.pc = cpu.regs.pc.wrapping_add(e as i16 as u16);
+                None
+            })
+            .cycle(|cpu| cpu.fetch())
     }
 
     fn jp_deref_hl(&mut self) -> &mut Self {
-        self.cycle_old(|cpu| cpu.select_addr(AddrSel::Hl).write_pc().fetch())
+        self.cycle(|cpu| {
+            cpu.regs.pc = cpu.regs.hl();
+            cpu.fetch()
+        })
     }
 
     fn ret(&mut self) -> &mut Self {
-        self.cycle_old(|cpu| cpu.pop_byte().write_from_bus_to(DataSel::AddrL))
-            .cycle_old(|cpu| cpu.pop_byte().write_from_bus_to(DataSel::AddrH))
-            .cycle_old(|cpu| cpu.write_pc())
-            .cycle_old(|cpu| cpu.fetch())
+        self.cycle(|cpu| cpu.pop_byte())
+            .cycle(|cpu| {
+                cpu.state.data = cpu.state.bus_data.unwrap();
+                cpu.pop_byte()
+            })
+            .cycle(|cpu| {
+                cpu.regs.pc = (cpu.state.bus_data.unwrap() as u16) << 8 | cpu.state.data as u16;
+                None
+            })
+            .cycle(|cpu| cpu.fetch())
     }
 
-    fn cycle_old<F>(&mut self, f: F) -> &mut Self
+    fn cycle<F>(&mut self, f: F) -> &mut Self
     where
-        F: FnOnce(&mut Microinstruction) -> &mut Microinstruction,
+        F: FnOnce(&mut Self) -> CpuOutput,
     {
         let output = if self.state.m_cycle == self.sweep_m_cycle {
-            let mut microinstruction = Microinstruction::default();
-            f(&mut microinstruction);
-            Some(self.execute_microinstruction(&microinstruction))
+            match *self.phase {
+                Tick => Some(f(self)),
+                Tock => {
+                    self.state.bus_data = self.input.data;
+                    if self.state.fetch {
+                        self.mode_transition =
+                            Some(ModeTransition::Run(Opcode(self.state.bus_data.unwrap())))
+                    }
+                    Some(None)
+                }
+            }
         } else {
             None
         };
         self.sweep_m_cycle = self.sweep_m_cycle.next();
         self.output = self.output.take().or(output);
         self
+    }
+
+    fn fetch(&mut self) -> CpuOutput {
+        self.state.fetch = true;
+        self.read_immediate()
+    }
+
+    fn read_immediate(&mut self) -> CpuOutput {
+        let pc = self.regs.pc;
+        self.regs.pc += 1;
+        Some(BusOp::Read(pc))
+    }
+
+    fn push_byte(&mut self, data: u8) -> CpuOutput {
+        self.regs.sp -= 1;
+        Some(BusOp::Write(self.regs.sp, data))
+    }
+
+    fn pop_byte(&mut self) -> CpuOutput {
+        let sp = self.regs.sp;
+        self.regs.sp += 1;
+        Some(BusOp::Read(sp))
+    }
+
+    fn alu_op(&self, op: AluOp, lhs: u8, rhs: u8) -> (u8, Flags) {
+        match op {
+            AluOp::Add => alu::add(lhs, rhs, false),
+            AluOp::Adc => alu::add(lhs, rhs, self.regs.f.cy),
+            AluOp::Sub => alu::sub(lhs, rhs, false),
+            AluOp::Sbc => alu::sub(lhs, rhs, self.regs.f.cy),
+            AluOp::And => alu::and(lhs, rhs),
+            AluOp::Xor => alu::xor(lhs, rhs),
+            AluOp::Or => alu::or(lhs, rhs),
+            AluOp::Cp => {
+                let (_, flags) = alu::sub(lhs, rhs, false);
+                (lhs, flags)
+            }
+        }
+    }
+
+    fn evaluate_condition(&self, cc: Cc) -> bool {
+        match cc {
+            Cc::Nz => !self.regs.f.z,
+            Cc::Z => self.regs.f.z,
+            Cc::Nc => !self.regs.f.cy,
+            Cc::C => self.regs.f.cy,
+        }
     }
 }
 

@@ -1,7 +1,4 @@
-use super::R;
-
-#[cfg(test)]
-use super::Qq;
+use super::{Dd, Qq, R};
 
 use std::ops::{BitAnd, BitOr, Not};
 
@@ -25,6 +22,13 @@ pub struct Flags {
     pub n: bool,
     pub h: bool,
     pub cy: bool,
+}
+
+pub(super) enum RegSelect {
+    R(R),
+    F,
+    SpH,
+    SpL,
 }
 
 impl Regs {
@@ -68,7 +72,6 @@ impl Regs {
         }
     }
 
-    #[cfg(test)]
     pub(super) fn read_qq_h(&self, qq: Qq) -> u8 {
         match qq {
             Qq::Bc => self.b,
@@ -78,7 +81,6 @@ impl Regs {
         }
     }
 
-    #[cfg(test)]
     pub(super) fn read_qq_l(&self, qq: Qq) -> u8 {
         match qq {
             Qq::Bc => self.c,
@@ -88,23 +90,18 @@ impl Regs {
         }
     }
 
-    #[cfg(test)]
-    pub(super) fn write_qq_h(&mut self, qq: Qq, data: u8) {
-        match qq {
-            Qq::Bc => self.b = data,
-            Qq::De => self.d = data,
-            Qq::Hl => self.h = data,
-            Qq::Af => self.a = data,
-        }
-    }
-
-    #[cfg(test)]
-    pub(super) fn write_qq_l(&mut self, qq: Qq, data: u8) {
-        match qq {
-            Qq::Bc => self.c = data,
-            Qq::De => self.e = data,
-            Qq::Hl => self.l = data,
-            Qq::Af => self.f = data.into(),
+    pub(super) fn write(&mut self, reg_select: RegSelect, data: u8) {
+        match reg_select {
+            RegSelect::R(R::A) => self.a = data,
+            RegSelect::R(R::B) => self.b = data,
+            RegSelect::R(R::C) => self.c = data,
+            RegSelect::R(R::D) => self.d = data,
+            RegSelect::R(R::E) => self.e = data,
+            RegSelect::R(R::H) => self.h = data,
+            RegSelect::R(R::L) => self.l = data,
+            RegSelect::F => self.f = data.into(),
+            RegSelect::SpH => self.sp = self.sp & 0x00ff | u16::from(data) << 8,
+            RegSelect::SpL => self.sp = self.sp & 0xff00 | u16::from(data),
         }
     }
 }
@@ -164,6 +161,46 @@ impl Not for Flags {
             n: !self.n,
             h: !self.h,
             cy: !self.cy,
+        }
+    }
+}
+
+impl Dd {
+    pub(super) fn high(self) -> RegSelect {
+        match self {
+            Dd::Bc => RegSelect::R(R::B),
+            Dd::De => RegSelect::R(R::D),
+            Dd::Hl => RegSelect::R(R::H),
+            Dd::Sp => RegSelect::SpH,
+        }
+    }
+
+    pub(super) fn low(self) -> RegSelect {
+        match self {
+            Dd::Bc => RegSelect::R(R::C),
+            Dd::De => RegSelect::R(R::E),
+            Dd::Hl => RegSelect::R(R::L),
+            Dd::Sp => RegSelect::SpL,
+        }
+    }
+}
+
+impl Qq {
+    pub(super) fn high(self) -> RegSelect {
+        match self {
+            Qq::Bc => RegSelect::R(R::B),
+            Qq::De => RegSelect::R(R::D),
+            Qq::Hl => RegSelect::R(R::H),
+            Qq::Af => RegSelect::R(R::A),
+        }
+    }
+
+    pub(super) fn low(self) -> RegSelect {
+        match self {
+            Qq::Bc => RegSelect::R(R::C),
+            Qq::De => RegSelect::R(R::E),
+            Qq::Hl => RegSelect::R(R::L),
+            Qq::Af => RegSelect::F,
         }
     }
 }

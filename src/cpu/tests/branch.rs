@@ -133,7 +133,6 @@ fn jr_e_min_value() {
     )
 }
 
-#[ignore]
 #[test]
 fn jr_e_with_carry() {
     let mut cpu = Cpu::default();

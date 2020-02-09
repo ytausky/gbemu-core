@@ -719,8 +719,8 @@ fn push_af() {
 
 fn test_push_qq(qq: Qq) {
     let mut cpu = Cpu::default();
-    cpu.regs.write_qq_h(qq, 0x12);
-    cpu.regs.write_qq_l(qq, 0x34);
+    cpu.regs.write(qq.high(), 0x12);
+    cpu.regs.write(qq.low(), 0x34);
     cpu.regs.sp = 0xfffe;
     cpu.test_simple_instr(
         &encode_push_qq(qq),
