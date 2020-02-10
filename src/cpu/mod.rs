@@ -283,38 +283,40 @@ struct RunModeCpu<'a> {
 
 impl<'a> RunModeCpu<'a> {
     fn step(&mut self) -> (Option<ModeTransition>, CpuOutput) {
-        let (transition, output) = InstrExecution {
-            regs: self.regs,
-            mode_transition: None,
-            state: self.stage,
-            phase: self.phase,
-            input: self.input,
-            sweep_m_cycle: M1,
-            output: None,
+        match self.phase {
+            Tick => {
+                let output = InstrExecution {
+                    regs: self.regs,
+                    state: self.stage,
+                    sweep_m_cycle: M1,
+                    output: None,
+                }
+                .exec_instr();
+                (None, output)
+            }
+            Tock => {
+                self.stage.bus_data = self.input.data;
+                let transition = if self.stage.fetch {
+                    Some(ModeTransition::Run(Opcode(self.stage.bus_data.unwrap())))
+                } else {
+                    self.stage.m_cycle = self.stage.m_cycle.next();
+                    None
+                };
+                (transition, None)
+            }
         }
-        .exec_instr();
-        if transition.is_none() {
-            self.stage.m_cycle = match self.phase {
-                Tick => self.stage.m_cycle,
-                Tock => self.stage.m_cycle.next(),
-            };
-        }
-        (transition, output)
     }
 }
 
 struct InstrExecution<'a> {
     regs: &'a mut Regs,
     state: &'a mut ComplexInstrExecState,
-    phase: &'a Phase,
-    mode_transition: Option<ModeTransition>,
-    input: &'a Input,
     sweep_m_cycle: MCycle,
     output: Option<CpuOutput>,
 }
 
 impl<'a> InstrExecution<'a> {
-    fn exec_instr(mut self) -> (Option<ModeTransition>, CpuOutput) {
+    fn exec_instr(mut self) -> CpuOutput {
         match self.state.opcode.split() {
             (0b00, 0b000, 0b000) => self.nop(),
             (0b00, dest, 0b001) if dest & 0b001 == 0 => self.ld_dd_nn((dest >> 1).into()),
@@ -355,7 +357,7 @@ impl<'a> InstrExecution<'a> {
             (0b11, 0b111, 0b010) => self.ld_a_deref_nn(),
             _ => unimplemented!(),
         };
-        (self.mode_transition, self.output.unwrap())
+        self.output.unwrap()
     }
 
     fn nop(&mut self) -> &mut Self {
@@ -735,17 +737,7 @@ impl<'a> InstrExecution<'a> {
         F: FnOnce(&mut Self) -> CpuOutput,
     {
         let output = if self.state.m_cycle == self.sweep_m_cycle {
-            match *self.phase {
-                Tick => Some(f(self)),
-                Tock => {
-                    self.state.bus_data = self.input.data;
-                    if self.state.fetch {
-                        self.mode_transition =
-                            Some(ModeTransition::Run(Opcode(self.state.bus_data.unwrap())))
-                    }
-                    Some(None)
-                }
-            }
+            Some(f(self))
         } else {
             None
         };
