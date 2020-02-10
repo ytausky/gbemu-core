@@ -368,14 +368,14 @@ impl<'a> InstrExecution<'a> {
 
     fn ld_r_r(&mut self, dest: R, src: R) -> &mut Self {
         self.cycle(|cpu| {
-            *cpu.regs.select_r_mut(dest) = *cpu.regs.select_r(src);
+            cpu.regs.write(dest, cpu.regs.read(src));
             cpu.fetch()
         })
     }
 
     fn ld_r_n(&mut self, dest: R) -> &mut Self {
         self.cycle(|cpu| cpu.read_immediate()).cycle(|cpu| {
-            *cpu.regs.select_r_mut(dest) = cpu.state.bus_data.unwrap();
+            cpu.regs.write(dest, cpu.state.bus_data.unwrap());
             cpu.fetch()
         })
     }
@@ -383,13 +383,13 @@ impl<'a> InstrExecution<'a> {
     fn ld_r_deref_hl(&mut self, dest: R) -> &mut Self {
         self.cycle(|cpu| Some(BusOp::Read(cpu.regs.hl())))
             .cycle(|cpu| {
-                *cpu.regs.select_r_mut(dest) = cpu.state.bus_data.unwrap();
+                cpu.regs.write(dest, cpu.state.bus_data.unwrap());
                 cpu.fetch()
             })
     }
 
     fn ld_deref_hl_r(&mut self, src: R) -> &mut Self {
-        self.cycle(|cpu| Some(BusOp::Write(cpu.regs.hl(), *cpu.regs.select_r(src))))
+        self.cycle(|cpu| Some(BusOp::Write(cpu.regs.hl(), cpu.regs.read(src))))
             .cycle(|cpu| cpu.fetch())
     }
 
@@ -562,8 +562,8 @@ impl<'a> InstrExecution<'a> {
 
     fn push_qq(&mut self, qq: Qq) -> &mut Self {
         self.cycle(|_| None)
-            .cycle(|cpu| cpu.push_byte(cpu.regs.read_qq_h(qq)))
-            .cycle(|cpu| cpu.push_byte(cpu.regs.read_qq_l(qq)))
+            .cycle(|cpu| cpu.push_byte(cpu.regs.read(qq.high())))
+            .cycle(|cpu| cpu.push_byte(cpu.regs.read(qq.low())))
             .cycle(|cpu| cpu.fetch())
     }
 
@@ -610,7 +610,7 @@ impl<'a> InstrExecution<'a> {
 
     fn alu_op_r(&mut self, op: AluOp, r: R) -> &mut Self {
         self.cycle(|cpu| {
-            let (result, flags) = cpu.alu_op(op, cpu.regs.a, *cpu.regs.select_r(r));
+            let (result, flags) = cpu.alu_op(op, cpu.regs.a, cpu.regs.read(r));
             cpu.regs.a = result;
             cpu.regs.f = flags;
             cpu.fetch()
@@ -638,8 +638,8 @@ impl<'a> InstrExecution<'a> {
 
     fn inc_r(&mut self, r: R) -> &mut Self {
         self.cycle(|cpu| {
-            let (result, flags) = alu::add(*cpu.regs.select_r(r), 1, false);
-            *cpu.regs.select_r_mut(r) = result;
+            let (result, flags) = alu::add(cpu.regs.read(r), 1, false);
+            cpu.regs.write(r, result);
             cpu.regs.f.z = flags.z;
             cpu.regs.f.n = flags.n;
             cpu.regs.f.h = flags.h;

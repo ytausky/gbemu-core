@@ -65,7 +65,7 @@ fn test_adder_for_all_r<F: Fn(R) -> Vec<u8>>(encoder: &F, test_case: &AluTestCas
 fn test_adder<F: Fn(R) -> Vec<u8>>(r: R, encoder: &F, test_case: &AluTestCase) {
     let mut cpu = Cpu::default();
     cpu.regs.a = test_case.input.x;
-    *cpu.regs.select_r_mut(r) = test_case.input.y;
+    cpu.regs.write(r, test_case.input.y);
     cpu.regs.f.cy = test_case.input.carry_in;
     cpu.test_simple_instr(&encoder(r), &[]);
     assert_eq!(cpu.regs.a, test_case.expected.result);
@@ -418,9 +418,9 @@ fn inc_l() {
 
 fn test_inc_r(r: R) {
     let mut cpu = Cpu::default();
-    *cpu.regs.select_r_mut(r) = 0xff;
+    cpu.regs.write(r, 0xff);
     cpu.test_simple_instr(&encode_inc_r(r), &[]);
-    assert_eq!(*cpu.regs.select_r(r), 0x00);
+    assert_eq!(cpu.regs.read(r), 0x00);
     assert_eq!(cpu.regs.f, flags!(z, h))
 }
 

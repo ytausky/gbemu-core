@@ -45,53 +45,26 @@ impl Regs {
     }
 
     fn pair(&self, h: R, l: R) -> u16 {
-        (u16::from(*self.select_r(h)) << 8) + u16::from(*self.select_r(l))
+        u16::from_be_bytes([self.read(h), self.read(l)])
     }
 
-    pub(super) fn select_r(&self, r: R) -> &u8 {
-        match r {
-            R::A => &self.a,
-            R::B => &self.b,
-            R::C => &self.c,
-            R::D => &self.d,
-            R::E => &self.e,
-            R::H => &self.h,
-            R::L => &self.l,
+    pub(super) fn read(&self, reg_select: impl Into<RegSelect>) -> u8 {
+        match reg_select.into() {
+            RegSelect::R(R::A) => self.a,
+            RegSelect::R(R::B) => self.b,
+            RegSelect::R(R::C) => self.c,
+            RegSelect::R(R::D) => self.d,
+            RegSelect::R(R::E) => self.e,
+            RegSelect::R(R::H) => self.h,
+            RegSelect::R(R::L) => self.l,
+            RegSelect::F => self.f.into(),
+            RegSelect::SpH => (self.sp >> 8) as u8,
+            RegSelect::SpL => (self.sp & 0x00ff) as u8,
         }
     }
 
-    pub(super) fn select_r_mut(&mut self, r: R) -> &mut u8 {
-        match r {
-            R::A => &mut self.a,
-            R::B => &mut self.b,
-            R::C => &mut self.c,
-            R::D => &mut self.d,
-            R::E => &mut self.e,
-            R::H => &mut self.h,
-            R::L => &mut self.l,
-        }
-    }
-
-    pub(super) fn read_qq_h(&self, qq: Qq) -> u8 {
-        match qq {
-            Qq::Bc => self.b,
-            Qq::De => self.d,
-            Qq::Hl => self.h,
-            Qq::Af => self.a,
-        }
-    }
-
-    pub(super) fn read_qq_l(&self, qq: Qq) -> u8 {
-        match qq {
-            Qq::Bc => self.c,
-            Qq::De => self.e,
-            Qq::Hl => self.l,
-            Qq::Af => self.f.into(),
-        }
-    }
-
-    pub(super) fn write(&mut self, reg_select: RegSelect, data: u8) {
-        match reg_select {
+    pub(super) fn write(&mut self, reg_select: impl Into<RegSelect>, data: u8) {
+        match reg_select.into() {
             RegSelect::R(R::A) => self.a = data,
             RegSelect::R(R::B) => self.b = data,
             RegSelect::R(R::C) => self.c = data,
@@ -162,6 +135,12 @@ impl Not for Flags {
             h: !self.h,
             cy: !self.cy,
         }
+    }
+}
+
+impl From<R> for RegSelect {
+    fn from(r: R) -> Self {
+        RegSelect::R(r)
     }
 }
 
