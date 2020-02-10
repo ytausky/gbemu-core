@@ -416,7 +416,7 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ld_a_deref_c(&mut self) -> &mut Self {
-        self.cycle(|cpu| Some(BusOp::Read(0xff00 | u16::from(cpu.regs.c))))
+        self.cycle(|cpu| Some(BusOp::Read(u16::from_be_bytes([0xff, cpu.regs.c]))))
             .cycle(|cpu| {
                 cpu.regs.a = cpu.state.bus_data.unwrap();
                 cpu.fetch()
@@ -424,13 +424,23 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ld_deref_c_a(&mut self) -> &mut Self {
-        self.cycle(|cpu| Some(BusOp::Write(0xff00 | u16::from(cpu.regs.c), cpu.regs.a)))
-            .cycle(|cpu| cpu.fetch())
+        self.cycle(|cpu| {
+            Some(BusOp::Write(
+                u16::from_be_bytes([0xff, cpu.regs.c]),
+                cpu.regs.a,
+            ))
+        })
+        .cycle(|cpu| cpu.fetch())
     }
 
     fn ld_a_deref_n(&mut self) -> &mut Self {
         self.cycle(|cpu| cpu.read_immediate())
-            .cycle(|cpu| Some(BusOp::Read(0xff00 | u16::from(cpu.state.bus_data.unwrap()))))
+            .cycle(|cpu| {
+                Some(BusOp::Read(u16::from_be_bytes([
+                    0xff,
+                    cpu.state.bus_data.unwrap(),
+                ])))
+            })
             .cycle(|cpu| {
                 cpu.regs.a = cpu.state.bus_data.unwrap();
                 cpu.fetch()
@@ -441,7 +451,7 @@ impl<'a> InstrExecution<'a> {
         self.cycle(|cpu| cpu.read_immediate())
             .cycle(|cpu| {
                 Some(BusOp::Write(
-                    0xff00 | u16::from(cpu.state.bus_data.unwrap()),
+                    u16::from_be_bytes([0xff, cpu.state.bus_data.unwrap()]),
                     cpu.regs.a,
                 ))
             })
@@ -455,9 +465,10 @@ impl<'a> InstrExecution<'a> {
                 cpu.read_immediate()
             })
             .cycle(|cpu| {
-                Some(BusOp::Read(
-                    u16::from(cpu.state.bus_data.unwrap()) << 8 | u16::from(cpu.state.data),
-                ))
+                Some(BusOp::Read(u16::from_be_bytes([
+                    cpu.state.bus_data.unwrap(),
+                    cpu.state.data,
+                ])))
             })
             .cycle(|cpu| {
                 cpu.regs.a = cpu.state.bus_data.unwrap();
@@ -473,7 +484,7 @@ impl<'a> InstrExecution<'a> {
             })
             .cycle(|cpu| {
                 Some(BusOp::Write(
-                    u16::from(cpu.state.bus_data.unwrap()) << 8 | u16::from(cpu.state.data),
+                    u16::from_be_bytes([cpu.state.bus_data.unwrap(), cpu.state.data]),
                     cpu.regs.a,
                 ))
             })
@@ -666,7 +677,7 @@ impl<'a> InstrExecution<'a> {
                 cpu.read_immediate()
             })
             .cycle(|cpu| {
-                cpu.regs.pc = (cpu.state.bus_data.unwrap() as u16) << 8 | cpu.state.data as u16;
+                cpu.regs.pc = u16::from_be_bytes([cpu.state.bus_data.unwrap(), cpu.state.data]);
                 None
             })
             .cycle(|cpu| cpu.fetch())
@@ -680,7 +691,7 @@ impl<'a> InstrExecution<'a> {
             })
             .cycle(|cpu| {
                 if cpu.evaluate_condition(cc) {
-                    cpu.regs.pc = (cpu.state.bus_data.unwrap() as u16) << 8 | cpu.state.data as u16;
+                    cpu.regs.pc = u16::from_be_bytes([cpu.state.bus_data.unwrap(), cpu.state.data]);
                     None
                 } else {
                     cpu.fetch()
@@ -713,7 +724,7 @@ impl<'a> InstrExecution<'a> {
                 cpu.pop_byte()
             })
             .cycle(|cpu| {
-                cpu.regs.pc = (cpu.state.bus_data.unwrap() as u16) << 8 | cpu.state.data as u16;
+                cpu.regs.pc = u16::from_be_bytes([cpu.state.bus_data.unwrap(), cpu.state.data]);
                 None
             })
             .cycle(|cpu| cpu.fetch())
