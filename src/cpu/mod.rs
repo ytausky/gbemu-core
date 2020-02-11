@@ -172,23 +172,23 @@ impl Opcode {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum MCycle {
-    M1,
     M2,
     M3,
     M4,
     M5,
     M6,
+    M7,
 }
 
 impl MCycle {
     fn next(self) -> Self {
         match self {
-            M1 => M2,
             M2 => M3,
             M3 => M4,
             M4 => M5,
             M5 => M6,
-            M6 => panic!(),
+            M6 => M7,
+            M7 => unreachable!(),
         }
     }
 }
@@ -207,7 +207,7 @@ impl Default for ComplexInstrExecState {
     fn default() -> Self {
         Self {
             opcode: Opcode(0x00),
-            m_cycle: M1,
+            m_cycle: M2,
             bus_data: None,
             fetch: false,
             interrupt: false,
@@ -257,7 +257,7 @@ impl From<ModeTransition> for Mode {
         match transition {
             ModeTransition::Run(opcode) => Mode::Run(ComplexInstrExecState {
                 opcode,
-                m_cycle: M1,
+                m_cycle: M2,
                 bus_data: None,
                 fetch: false,
                 interrupt: false,
@@ -283,7 +283,7 @@ impl<'a> RunModeCpu<'a> {
                 let mut output = InstrExecution {
                     regs: self.regs,
                     state: self.stage,
-                    sweep_m_cycle: M1,
+                    sweep_m_cycle: M2,
                     output: None,
                 }
                 .exec_instr();
