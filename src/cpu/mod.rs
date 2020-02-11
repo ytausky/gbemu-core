@@ -275,16 +275,12 @@ impl<'a> RunModeCpu<'a> {
     fn step(&mut self, input: &Input) -> (Option<ModeTransition>, CpuOutput) {
         match self.phase {
             Tick => {
-                let mut output = InstrExecution {
+                let output = InstrExecution {
                     regs: self.regs,
                     state: self.state,
                     m_cycle: self.m_cycle,
                 }
                 .exec_instr();
-                if self.state.m1 {
-                    assert_eq!(output, None);
-                    output = Some(BusOp::Read(self.regs.pc))
-                }
                 (None, output)
             }
             Tock => {
@@ -830,7 +826,7 @@ impl<'a> InstrExecution<'a> {
 
     fn execute_m1(&mut self) -> Option<BusOp> {
         self.state.m1 = true;
-        None
+        Some(BusOp::Read(self.regs.pc))
     }
 
     fn read_immediate(&mut self) -> CpuOutput {
