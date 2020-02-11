@@ -25,26 +25,22 @@ mod tests;
 pub struct Cpu {
     pub regs: Regs,
     mode: Mode,
+    m_cycle: MCycle,
     phase: Phase,
 }
 
 enum Mode {
     Instruction(InstructionExecutionState),
-    Interrupt(InterruptDispatchState),
+    Interrupt,
 }
 
 struct InstructionExecutionState {
     opcode: Opcode,
-    m_cycle: MCycle,
     bus_data: Option<u8>,
     fetch: bool,
     interrupt: bool,
     data: u8,
     addr: u16,
-}
-
-struct InterruptDispatchState {
-    m_cycle: MCycle,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -198,6 +194,7 @@ impl Default for Cpu {
         Self {
             regs: Default::default(),
             mode: Mode::Instruction(Default::default()),
+            m_cycle: M2,
             phase: Tick,
         }
     }
@@ -207,7 +204,6 @@ impl Default for InstructionExecutionState {
     fn default() -> Self {
         InstructionExecutionState {
             opcode: Opcode(0x00),
-            m_cycle: M2,
             bus_data: None,
             fetch: false,
             interrupt: false,
@@ -223,25 +219,30 @@ impl Cpu {
             Mode::Instruction(state) => RunModeCpu {
                 regs: &mut self.regs,
                 state,
+                m_cycle: self.m_cycle,
                 phase: self.phase,
                 input,
             }
             .step(),
-            Mode::Interrupt(state) => InterruptModeCpu {
+            Mode::Interrupt => InterruptModeCpu {
                 regs: &mut self.regs,
-                state,
+                m_cycle: self.m_cycle,
                 phase: self.phase,
                 input,
             }
             .step(),
+        };
+        self.phase = match self.phase {
+            Tick => Tock,
+            Tock => {
+                self.m_cycle = self.m_cycle.next();
+                Tick
+            }
         };
         if let Some(transition) = mode_transition {
             self.mode = transition.into();
+            self.m_cycle = M2;
         }
-        self.phase = match self.phase {
-            Tick => Tock,
-            Tock => Tick,
-        };
         output
     }
 }
@@ -257,14 +258,13 @@ impl From<ModeTransition> for Mode {
         match transition {
             ModeTransition::Instruction(opcode) => Mode::Instruction(InstructionExecutionState {
                 opcode,
-                m_cycle: M2,
                 bus_data: None,
                 fetch: false,
                 interrupt: false,
                 data: 0xff,
                 addr: 0xffff,
             }),
-            ModeTransition::Interrupt => Mode::Interrupt(InterruptDispatchState { m_cycle: M2 }),
+            ModeTransition::Interrupt => Mode::Interrupt,
         }
     }
 }
@@ -272,6 +272,7 @@ impl From<ModeTransition> for Mode {
 struct RunModeCpu<'a> {
     regs: &'a mut Regs,
     state: &'a mut InstructionExecutionState,
+    m_cycle: MCycle,
     phase: Phase,
     input: &'a Input,
 }
@@ -283,6 +284,7 @@ impl<'a> RunModeCpu<'a> {
                 let mut output = InstrExecution {
                     regs: self.regs,
                     state: self.state,
+                    m_cycle: self.m_cycle,
                     sweep_m_cycle: M2,
                     output: None,
                 }
@@ -308,7 +310,6 @@ impl<'a> RunModeCpu<'a> {
                         ModeTransition::Instruction(Opcode(self.state.bus_data.unwrap()))
                     })
                 } else {
-                    self.state.m_cycle = self.state.m_cycle.next();
                     None
                 };
                 (transition, None)
@@ -320,6 +321,7 @@ impl<'a> RunModeCpu<'a> {
 struct InstrExecution<'a> {
     regs: &'a mut Regs,
     state: &'a mut InstructionExecutionState,
+    m_cycle: MCycle,
     sweep_m_cycle: MCycle,
     output: Option<CpuOutput>,
 }
@@ -745,7 +747,7 @@ impl<'a> InstrExecution<'a> {
     where
         F: FnOnce(&mut Self) -> CpuOutput,
     {
-        let output = if self.state.m_cycle == self.sweep_m_cycle {
+        let output = if self.m_cycle == self.sweep_m_cycle {
             Some(f(self))
         } else {
             None
@@ -805,14 +807,14 @@ impl<'a> InstrExecution<'a> {
 
 struct InterruptModeCpu<'a> {
     regs: &'a mut Regs,
-    state: &'a mut InterruptDispatchState,
+    m_cycle: MCycle,
     phase: Phase,
     input: &'a Input,
 }
 
 impl<'a> InterruptModeCpu<'a> {
     fn step(&mut self) -> (Option<ModeTransition>, CpuOutput) {
-        let output = match self.state.m_cycle {
+        match self.m_cycle {
             M2 => (None, None),
             M3 => (None, None),
             M4 => match self.phase {
@@ -840,11 +842,7 @@ impl<'a> InterruptModeCpu<'a> {
                 }
             },
             _ => unreachable!(),
-        };
-        if self.phase == Tock {
-            self.state.m_cycle = self.state.m_cycle.next();
         }
-        output
     }
 }
 
