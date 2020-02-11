@@ -221,16 +221,14 @@ impl Cpu {
                 state,
                 m_cycle: self.m_cycle,
                 phase: self.phase,
-                input,
             }
-            .step(),
+            .step(input),
             Mode::Interrupt => InterruptModeCpu {
                 regs: &mut self.regs,
                 m_cycle: self.m_cycle,
                 phase: self.phase,
-                input,
             }
-            .step(),
+            .step(input),
         };
         self.phase = match self.phase {
             Tick => Tock,
@@ -274,11 +272,10 @@ struct RunModeCpu<'a> {
     state: &'a mut InstructionExecutionState,
     m_cycle: MCycle,
     phase: Phase,
-    input: &'a Input,
 }
 
 impl<'a> RunModeCpu<'a> {
-    fn step(&mut self) -> (Option<ModeTransition>, CpuOutput) {
+    fn step(&mut self, input: &Input) -> (Option<ModeTransition>, CpuOutput) {
         match self.phase {
             Tick => {
                 let mut output = InstrExecution {
@@ -291,7 +288,7 @@ impl<'a> RunModeCpu<'a> {
                 .exec_instr();
                 if self.state.fetch {
                     assert_eq!(output, None);
-                    if self.input.interrupt_flags != 0x00 {
+                    if input.interrupt_flags != 0x00 {
                         self.state.interrupt = true;
                     } else {
                         let pc = self.regs.pc;
@@ -302,7 +299,7 @@ impl<'a> RunModeCpu<'a> {
                 (None, output)
             }
             Tock => {
-                self.state.bus_data = self.input.data;
+                self.state.bus_data = input.data;
                 let transition = if self.state.fetch {
                     Some(if self.state.interrupt {
                         ModeTransition::Interrupt
@@ -809,11 +806,10 @@ struct InterruptModeCpu<'a> {
     regs: &'a mut Regs,
     m_cycle: MCycle,
     phase: Phase,
-    input: &'a Input,
 }
 
 impl<'a> InterruptModeCpu<'a> {
-    fn step(&mut self) -> (Option<ModeTransition>, CpuOutput) {
+    fn step(&mut self, input: &Input) -> (Option<ModeTransition>, CpuOutput) {
         match self.m_cycle {
             M2 => (None, None),
             M3 => (None, None),
@@ -836,7 +832,7 @@ impl<'a> InterruptModeCpu<'a> {
                     )
                 }
                 Tock => {
-                    let n = self.input.interrupt_flags.trailing_zeros();
+                    let n = input.interrupt_flags.trailing_zeros();
                     self.regs.pc = 0x0040 + 8 * n as u16;
                     (Some(ModeTransition::Instruction(Opcode(0x00))), None)
                 }
