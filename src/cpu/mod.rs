@@ -29,11 +29,11 @@ pub struct Cpu {
 }
 
 enum Mode {
-    Run(ComplexInstrExecState),
+    Instruction(InstructionExecutionState),
     Interrupt(InterruptDispatchState),
 }
 
-struct ComplexInstrExecState {
+struct InstructionExecutionState {
     opcode: Opcode,
     m_cycle: MCycle,
     bus_data: Option<u8>,
@@ -197,15 +197,15 @@ impl Default for Cpu {
     fn default() -> Self {
         Self {
             regs: Default::default(),
-            mode: Mode::Run(Default::default()),
+            mode: Mode::Instruction(Default::default()),
             phase: Tick,
         }
     }
 }
 
-impl Default for ComplexInstrExecState {
+impl Default for InstructionExecutionState {
     fn default() -> Self {
-        Self {
+        InstructionExecutionState {
             opcode: Opcode(0x00),
             m_cycle: M2,
             bus_data: None,
@@ -220,10 +220,10 @@ impl Default for ComplexInstrExecState {
 impl Cpu {
     pub fn step(&mut self, input: &Input) -> CpuOutput {
         let (mode_transition, output) = match &mut self.mode {
-            Mode::Run(stage) => RunModeCpu {
+            Mode::Instruction(state) => RunModeCpu {
                 regs: &mut self.regs,
-                stage,
-                phase: &self.phase,
+                state,
+                phase: self.phase,
                 input,
             }
             .step(),
@@ -248,14 +248,14 @@ impl Cpu {
 
 #[derive(Clone, Copy)]
 enum ModeTransition {
-    Run(Opcode),
+    Instruction(Opcode),
     Interrupt,
 }
 
 impl From<ModeTransition> for Mode {
     fn from(transition: ModeTransition) -> Self {
         match transition {
-            ModeTransition::Run(opcode) => Mode::Run(ComplexInstrExecState {
+            ModeTransition::Instruction(opcode) => Mode::Instruction(InstructionExecutionState {
                 opcode,
                 m_cycle: M2,
                 bus_data: None,
@@ -271,8 +271,8 @@ impl From<ModeTransition> for Mode {
 
 struct RunModeCpu<'a> {
     regs: &'a mut Regs,
-    stage: &'a mut ComplexInstrExecState,
-    phase: &'a Phase,
+    state: &'a mut InstructionExecutionState,
+    phase: Phase,
     input: &'a Input,
 }
 
@@ -282,15 +282,15 @@ impl<'a> RunModeCpu<'a> {
             Tick => {
                 let mut output = InstrExecution {
                     regs: self.regs,
-                    state: self.stage,
+                    state: self.state,
                     sweep_m_cycle: M2,
                     output: None,
                 }
                 .exec_instr();
-                if self.stage.fetch {
+                if self.state.fetch {
                     assert_eq!(output, None);
                     if self.input.interrupt_flags != 0x00 {
-                        self.stage.interrupt = true;
+                        self.state.interrupt = true;
                     } else {
                         let pc = self.regs.pc;
                         self.regs.pc += 1;
@@ -300,15 +300,15 @@ impl<'a> RunModeCpu<'a> {
                 (None, output)
             }
             Tock => {
-                self.stage.bus_data = self.input.data;
-                let transition = if self.stage.fetch {
-                    Some(if self.stage.interrupt {
+                self.state.bus_data = self.input.data;
+                let transition = if self.state.fetch {
+                    Some(if self.state.interrupt {
                         ModeTransition::Interrupt
                     } else {
-                        ModeTransition::Run(Opcode(self.stage.bus_data.unwrap()))
+                        ModeTransition::Instruction(Opcode(self.state.bus_data.unwrap()))
                     })
                 } else {
-                    self.stage.m_cycle = self.stage.m_cycle.next();
+                    self.state.m_cycle = self.state.m_cycle.next();
                     None
                 };
                 (transition, None)
@@ -319,7 +319,7 @@ impl<'a> RunModeCpu<'a> {
 
 struct InstrExecution<'a> {
     regs: &'a mut Regs,
-    state: &'a mut ComplexInstrExecState,
+    state: &'a mut InstructionExecutionState,
     sweep_m_cycle: MCycle,
     output: Option<CpuOutput>,
 }
@@ -836,7 +836,7 @@ impl<'a> InterruptModeCpu<'a> {
                 Tock => {
                     let n = self.input.interrupt_flags.trailing_zeros();
                     self.regs.pc = 0x0040 + 8 * n as u16;
-                    (Some(ModeTransition::Run(Opcode(0x00))), None)
+                    (Some(ModeTransition::Instruction(Opcode(0x00))), None)
                 }
             },
             _ => unreachable!(),

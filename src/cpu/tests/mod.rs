@@ -160,7 +160,10 @@ impl Cpu {
         assert_eq!(self.step(&input), None);
         assert_eq!(self.step(&input), Some(BusOp::Write(sp - 2, low_byte(pc))));
         assert_eq!(self.step(&input), None);
-        assert_eq!(self.step(&Input::with_data(None)), Some(BusOp::Read(0x0040 + 8 * n)));
+        assert_eq!(
+            self.step(&Input::with_data(None)),
+            Some(BusOp::Read(0x0040 + 8 * n))
+        );
         assert_eq!(self.step(&Input::with_data(Some(0x00))), None);
     }
 }
