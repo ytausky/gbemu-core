@@ -38,7 +38,6 @@ struct InstructionExecutionState {
     opcode: Opcode,
     bus_data: Option<u8>,
     m1: bool,
-    interrupt: bool,
     data: u8,
     addr: u16,
 }
@@ -206,7 +205,6 @@ impl Default for InstructionExecutionState {
             opcode: Opcode(0x00),
             bus_data: None,
             m1: false,
-            interrupt: false,
             data: 0xff,
             addr: 0xffff,
         }
@@ -258,7 +256,6 @@ impl From<ModeTransition> for Mode {
                 opcode,
                 bus_data: None,
                 m1: false,
-                interrupt: false,
                 data: 0xff,
                 addr: 0xffff,
             }),
@@ -286,22 +283,17 @@ impl<'a> RunModeCpu<'a> {
                 .exec_instr();
                 if self.state.m1 {
                     assert_eq!(output, None);
-                    if input.interrupt_flags != 0x00 {
-                        self.state.interrupt = true;
-                    } else {
-                        let pc = self.regs.pc;
-                        self.regs.pc += 1;
-                        output = Some(BusOp::Read(pc))
-                    }
+                    output = Some(BusOp::Read(self.regs.pc))
                 }
                 (None, output)
             }
             Tock => {
                 self.state.bus_data = input.data;
                 let transition = if self.state.m1 {
-                    Some(if self.state.interrupt {
+                    Some(if input.interrupt_flags != 0x00 {
                         ModeTransition::Interrupt
                     } else {
+                        self.regs.pc += 1;
                         ModeTransition::Instruction(Opcode(self.state.bus_data.unwrap()))
                     })
                 } else {

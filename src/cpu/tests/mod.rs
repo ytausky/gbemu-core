@@ -146,12 +146,19 @@ impl Cpu {
     fn test_interrupt_dispatch(&mut self, n: u16) {
         let pc = self.regs.pc;
         let sp = self.regs.sp;
+        let interrupt_flags = 0x01 << n;
         let input = Input {
             data: None,
-            interrupt_flags: 0x01 << n,
+            interrupt_flags,
         };
-        assert_eq!(self.step(&input), None);
-        assert_eq!(self.step(&input), None);
+        assert_eq!(self.step(&input), Some(BusOp::Read(pc)));
+        assert_eq!(
+            self.step(&Input {
+                data: Some(0x00),
+                interrupt_flags
+            }),
+            None
+        );
         assert_eq!(self.step(&input), None);
         assert_eq!(self.step(&input), None);
         assert_eq!(self.step(&input), None);
