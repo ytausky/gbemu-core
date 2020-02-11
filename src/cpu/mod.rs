@@ -282,8 +282,6 @@ impl<'a> RunModeCpu<'a> {
                     regs: self.regs,
                     state: self.state,
                     m_cycle: self.m_cycle,
-                    sweep_m_cycle: M2,
-                    output: None,
                 }
                 .exec_instr();
                 if self.state.fetch {
@@ -319,8 +317,6 @@ struct InstrExecution<'a> {
     regs: &'a mut Regs,
     state: &'a mut InstructionExecutionState,
     m_cycle: MCycle,
-    sweep_m_cycle: MCycle,
-    output: Option<CpuOutput>,
 }
 
 impl<'a> InstrExecution<'a> {
@@ -364,397 +360,483 @@ impl<'a> InstrExecution<'a> {
             (0b11, 0b111, 0b001) => self.ld_sp_hl(),
             (0b11, 0b111, 0b010) => self.ld_a_deref_nn(),
             _ => unimplemented!(),
-        };
-        self.output.unwrap()
+        }
     }
 
-    fn nop(&mut self) -> &mut Self {
-        self.cycle(|cpu| cpu.fetch())
+    fn nop(&mut self) -> Option<BusOp> {
+        match self.m_cycle {
+            M2 => self.fetch(),
+            _ => unreachable!(),
+        }
     }
 
-    fn halt(&mut self) -> &mut Self {
+    fn halt(&mut self) -> Option<BusOp> {
         unimplemented!()
     }
 
-    fn ld_r_r(&mut self, dest: R, src: R) -> &mut Self {
-        self.cycle(|cpu| {
-            cpu.regs.write(dest, cpu.regs.read(src));
-            cpu.fetch()
-        })
+    fn ld_r_r(&mut self, dest: R, src: R) -> Option<BusOp> {
+        match self.m_cycle {
+            M2 => {
+                self.regs.write(dest, self.regs.read(src));
+                self.fetch()
+            }
+            _ => unreachable!(),
+        }
     }
 
-    fn ld_r_n(&mut self, dest: R) -> &mut Self {
-        self.cycle(|cpu| cpu.read_immediate()).cycle(|cpu| {
-            cpu.regs.write(dest, cpu.state.bus_data.unwrap());
-            cpu.fetch()
-        })
+    fn ld_r_n(&mut self, dest: R) -> Option<BusOp> {
+        match self.m_cycle {
+            M2 => self.read_immediate(),
+            M3 => {
+                self.regs.write(dest, self.state.bus_data.unwrap());
+                self.fetch()
+            }
+            _ => unreachable!(),
+        }
     }
 
-    fn ld_r_deref_hl(&mut self, dest: R) -> &mut Self {
-        self.cycle(|cpu| Some(BusOp::Read(cpu.regs.hl())))
-            .cycle(|cpu| {
-                cpu.regs.write(dest, cpu.state.bus_data.unwrap());
-                cpu.fetch()
-            })
+    fn ld_r_deref_hl(&mut self, dest: R) -> Option<BusOp> {
+        match self.m_cycle {
+            M2 => Some(BusOp::Read(self.regs.hl())),
+            M3 => {
+                self.regs.write(dest, self.state.bus_data.unwrap());
+                self.fetch()
+            }
+            _ => unreachable!(),
+        }
     }
 
-    fn ld_deref_hl_r(&mut self, src: R) -> &mut Self {
-        self.cycle(|cpu| Some(BusOp::Write(cpu.regs.hl(), cpu.regs.read(src))))
-            .cycle(|cpu| cpu.fetch())
+    fn ld_deref_hl_r(&mut self, src: R) -> Option<BusOp> {
+        match self.m_cycle {
+            M2 => Some(BusOp::Write(self.regs.hl(), self.regs.read(src))),
+            M3 => self.fetch(),
+            _ => unreachable!(),
+        }
     }
 
-    fn ld_deref_hl_n(&mut self) -> &mut Self {
-        self.cycle(|cpu| cpu.read_immediate())
-            .cycle(|cpu| Some(BusOp::Write(cpu.regs.hl(), cpu.state.bus_data.unwrap())))
-            .cycle(|cpu| cpu.fetch())
+    fn ld_deref_hl_n(&mut self) -> Option<BusOp> {
+        match self.m_cycle {
+            M2 => self.read_immediate(),
+            M3 => Some(BusOp::Write(self.regs.hl(), self.state.bus_data.unwrap())),
+            M4 => self.fetch(),
+            _ => unreachable!(),
+        }
     }
 
-    fn ld_a_deref_bc(&mut self) -> &mut Self {
-        self.cycle(|cpu| Some(BusOp::Read(cpu.regs.bc())))
-            .cycle(|cpu| {
-                cpu.regs.a = cpu.state.bus_data.unwrap();
-                cpu.fetch()
-            })
+    fn ld_a_deref_bc(&mut self) -> Option<BusOp> {
+        match self.m_cycle {
+            M2 => Some(BusOp::Read(self.regs.bc())),
+            M3 => {
+                self.regs.a = self.state.bus_data.unwrap();
+                self.fetch()
+            }
+            _ => unreachable!(),
+        }
     }
 
-    fn ld_a_deref_de(&mut self) -> &mut Self {
-        self.cycle(|cpu| Some(BusOp::Read(cpu.regs.de())))
-            .cycle(|cpu| {
-                cpu.regs.a = cpu.state.bus_data.unwrap();
-                cpu.fetch()
-            })
+    fn ld_a_deref_de(&mut self) -> Option<BusOp> {
+        match self.m_cycle {
+            M2 => Some(BusOp::Read(self.regs.de())),
+            M3 => {
+                self.regs.a = self.state.bus_data.unwrap();
+                self.fetch()
+            }
+            _ => unreachable!(),
+        }
     }
 
-    fn ld_a_deref_c(&mut self) -> &mut Self {
-        self.cycle(|cpu| Some(BusOp::Read(u16::from_be_bytes([0xff, cpu.regs.c]))))
-            .cycle(|cpu| {
-                cpu.regs.a = cpu.state.bus_data.unwrap();
-                cpu.fetch()
-            })
+    fn ld_a_deref_c(&mut self) -> Option<BusOp> {
+        match self.m_cycle {
+            M2 => Some(BusOp::Read(u16::from_be_bytes([0xff, self.regs.c]))),
+            M3 => {
+                self.regs.a = self.state.bus_data.unwrap();
+                self.fetch()
+            }
+            _ => unreachable!(),
+        }
     }
 
-    fn ld_deref_c_a(&mut self) -> &mut Self {
-        self.cycle(|cpu| {
-            Some(BusOp::Write(
-                u16::from_be_bytes([0xff, cpu.regs.c]),
-                cpu.regs.a,
-            ))
-        })
-        .cycle(|cpu| cpu.fetch())
+    fn ld_deref_c_a(&mut self) -> Option<BusOp> {
+        match self.m_cycle {
+            M2 => Some(BusOp::Write(
+                u16::from_be_bytes([0xff, self.regs.c]),
+                self.regs.a,
+            )),
+            M3 => self.fetch(),
+            _ => unreachable!(),
+        }
     }
 
-    fn ld_a_deref_n(&mut self) -> &mut Self {
-        self.cycle(|cpu| cpu.read_immediate())
-            .cycle(|cpu| {
-                Some(BusOp::Read(u16::from_be_bytes([
-                    0xff,
-                    cpu.state.bus_data.unwrap(),
-                ])))
-            })
-            .cycle(|cpu| {
-                cpu.regs.a = cpu.state.bus_data.unwrap();
-                cpu.fetch()
-            })
+    fn ld_a_deref_n(&mut self) -> Option<BusOp> {
+        match self.m_cycle {
+            M2 => self.read_immediate(),
+            M3 => Some(BusOp::Read(u16::from_be_bytes([
+                0xff,
+                self.state.bus_data.unwrap(),
+            ]))),
+            M4 => {
+                self.regs.a = self.state.bus_data.unwrap();
+                self.fetch()
+            }
+            _ => unreachable!(),
+        }
     }
 
-    fn ld_deref_n_a(&mut self) -> &mut Self {
-        self.cycle(|cpu| cpu.read_immediate())
-            .cycle(|cpu| {
-                Some(BusOp::Write(
-                    u16::from_be_bytes([0xff, cpu.state.bus_data.unwrap()]),
-                    cpu.regs.a,
-                ))
-            })
-            .cycle(|cpu| cpu.fetch())
+    fn ld_deref_n_a(&mut self) -> Option<BusOp> {
+        match self.m_cycle {
+            M2 => self.read_immediate(),
+            M3 => Some(BusOp::Write(
+                u16::from_be_bytes([0xff, self.state.bus_data.unwrap()]),
+                self.regs.a,
+            )),
+            M4 => self.fetch(),
+            _ => unreachable!(),
+        }
     }
 
-    fn ld_a_deref_nn(&mut self) -> &mut Self {
-        self.cycle(|cpu| cpu.read_immediate())
-            .cycle(|cpu| {
-                cpu.state.data = cpu.state.bus_data.unwrap();
-                cpu.read_immediate()
-            })
-            .cycle(|cpu| {
-                Some(BusOp::Read(u16::from_be_bytes([
-                    cpu.state.bus_data.unwrap(),
-                    cpu.state.data,
-                ])))
-            })
-            .cycle(|cpu| {
-                cpu.regs.a = cpu.state.bus_data.unwrap();
-                cpu.fetch()
-            })
+    fn ld_a_deref_nn(&mut self) -> Option<BusOp> {
+        match self.m_cycle {
+            M2 => self.read_immediate(),
+            M3 => {
+                self.state.data = self.state.bus_data.unwrap();
+                self.read_immediate()
+            }
+            M4 => Some(BusOp::Read(u16::from_be_bytes([
+                self.state.bus_data.unwrap(),
+                self.state.data,
+            ]))),
+            M5 => {
+                self.regs.a = self.state.bus_data.unwrap();
+                self.fetch()
+            }
+            _ => unreachable!(),
+        }
     }
 
-    fn ld_deref_nn_a(&mut self) -> &mut Self {
-        self.cycle(|cpu| cpu.read_immediate())
-            .cycle(|cpu| {
-                cpu.state.data = cpu.state.bus_data.unwrap();
-                cpu.read_immediate()
-            })
-            .cycle(|cpu| {
-                Some(BusOp::Write(
-                    u16::from_be_bytes([cpu.state.bus_data.unwrap(), cpu.state.data]),
-                    cpu.regs.a,
-                ))
-            })
-            .cycle(|cpu| cpu.fetch())
+    fn ld_deref_nn_a(&mut self) -> Option<BusOp> {
+        match self.m_cycle {
+            M2 => self.read_immediate(),
+            M3 => {
+                self.state.data = self.state.bus_data.unwrap();
+                self.read_immediate()
+            }
+            M4 => Some(BusOp::Write(
+                u16::from_be_bytes([self.state.bus_data.unwrap(), self.state.data]),
+                self.regs.a,
+            )),
+            M5 => self.fetch(),
+            _ => unreachable!(),
+        }
     }
 
-    fn ld_a_deref_hli(&mut self) -> &mut Self {
-        self.cycle(|cpu| {
-            let hl = cpu.regs.hl();
-            let incremented_hl = hl + 1;
-            cpu.regs.h = high_byte(incremented_hl);
-            cpu.regs.l = low_byte(incremented_hl);
-            Some(BusOp::Read(hl))
-        })
-        .cycle(|cpu| {
-            cpu.regs.a = cpu.state.bus_data.unwrap();
-            cpu.fetch()
-        })
+    fn ld_a_deref_hli(&mut self) -> Option<BusOp> {
+        match self.m_cycle {
+            M2 => {
+                let hl = self.regs.hl();
+                let incremented_hl = hl + 1;
+                self.regs.h = high_byte(incremented_hl);
+                self.regs.l = low_byte(incremented_hl);
+                Some(BusOp::Read(hl))
+            }
+            M3 => {
+                self.regs.a = self.state.bus_data.unwrap();
+                self.fetch()
+            }
+            _ => unreachable!(),
+        }
     }
 
-    fn ld_a_deref_hld(&mut self) -> &mut Self {
-        self.cycle(|cpu| {
-            let hl = cpu.regs.hl();
-            let decremented_hl = hl - 1;
-            cpu.regs.h = high_byte(decremented_hl);
-            cpu.regs.l = low_byte(decremented_hl);
-            Some(BusOp::Read(hl))
-        })
-        .cycle(|cpu| {
-            cpu.regs.a = cpu.state.bus_data.unwrap();
-            cpu.fetch()
-        })
+    fn ld_a_deref_hld(&mut self) -> Option<BusOp> {
+        match self.m_cycle {
+            M2 => {
+                let hl = self.regs.hl();
+                let decremented_hl = hl - 1;
+                self.regs.h = high_byte(decremented_hl);
+                self.regs.l = low_byte(decremented_hl);
+                Some(BusOp::Read(hl))
+            }
+            M3 => {
+                self.regs.a = self.state.bus_data.unwrap();
+                self.fetch()
+            }
+            _ => unreachable!(),
+        }
     }
 
-    fn ld_deref_bc_a(&mut self) -> &mut Self {
-        self.cycle(|cpu| Some(BusOp::Write(cpu.regs.bc(), cpu.regs.a)))
-            .cycle(|cpu| cpu.fetch())
+    fn ld_deref_bc_a(&mut self) -> Option<BusOp> {
+        match self.m_cycle {
+            M2 => Some(BusOp::Write(self.regs.bc(), self.regs.a)),
+            M3 => self.fetch(),
+            _ => unreachable!(),
+        }
     }
 
-    fn ld_deref_de_a(&mut self) -> &mut Self {
-        self.cycle(|cpu| Some(BusOp::Write(cpu.regs.de(), cpu.regs.a)))
-            .cycle(|cpu| cpu.fetch())
+    fn ld_deref_de_a(&mut self) -> Option<BusOp> {
+        match self.m_cycle {
+            M2 => Some(BusOp::Write(self.regs.de(), self.regs.a)),
+            M3 => self.fetch(),
+            _ => unreachable!(),
+        }
     }
 
-    fn ld_deref_hli_a(&mut self) -> &mut Self {
-        self.cycle(|cpu| {
-            let hl = cpu.regs.hl();
-            let incremented_hl = hl.wrapping_add(1);
-            cpu.regs.h = high_byte(incremented_hl);
-            cpu.regs.l = low_byte(incremented_hl);
-            Some(BusOp::Write(hl, cpu.regs.a))
-        })
-        .cycle(|cpu| cpu.fetch())
+    fn ld_deref_hli_a(&mut self) -> Option<BusOp> {
+        match self.m_cycle {
+            M2 => {
+                let hl = self.regs.hl();
+                let incremented_hl = hl.wrapping_add(1);
+                self.regs.h = high_byte(incremented_hl);
+                self.regs.l = low_byte(incremented_hl);
+                Some(BusOp::Write(hl, self.regs.a))
+            }
+            M3 => self.fetch(),
+            _ => unreachable!(),
+        }
     }
 
-    fn ld_deref_hld_a(&mut self) -> &mut Self {
-        self.cycle(|cpu| {
-            let hl = cpu.regs.hl();
-            let decremented_hl = hl - 1;
-            cpu.regs.h = high_byte(decremented_hl);
-            cpu.regs.l = low_byte(decremented_hl);
-            Some(BusOp::Write(hl, cpu.regs.a))
-        })
-        .cycle(|cpu| cpu.fetch())
+    fn ld_deref_hld_a(&mut self) -> Option<BusOp> {
+        match self.m_cycle {
+            M2 => {
+                let hl = self.regs.hl();
+                let decremented_hl = hl - 1;
+                self.regs.h = high_byte(decremented_hl);
+                self.regs.l = low_byte(decremented_hl);
+                Some(BusOp::Write(hl, self.regs.a))
+            }
+            M3 => self.fetch(),
+            _ => unreachable!(),
+        }
     }
 
-    fn ld_dd_nn(&mut self, dd: Dd) -> &mut Self {
-        self.cycle(|cpu| cpu.read_immediate())
-            .cycle(|cpu| {
-                cpu.regs.write(dd.low(), cpu.state.bus_data.unwrap());
-                cpu.read_immediate()
-            })
-            .cycle(|cpu| {
-                cpu.regs.write(dd.high(), cpu.state.bus_data.unwrap());
-                cpu.fetch()
-            })
+    fn ld_dd_nn(&mut self, dd: Dd) -> Option<BusOp> {
+        match self.m_cycle {
+            M2 => self.read_immediate(),
+            M3 => {
+                self.regs.write(dd.low(), self.state.bus_data.unwrap());
+                self.read_immediate()
+            }
+            M4 => {
+                self.regs.write(dd.high(), self.state.bus_data.unwrap());
+                self.fetch()
+            }
+            _ => unreachable!(),
+        }
     }
 
-    fn ld_sp_hl(&mut self) -> &mut Self {
-        self.cycle(|cpu| {
-            cpu.regs.sp = cpu.regs.hl();
-            None
-        })
-        .cycle(|cpu| cpu.fetch())
-    }
-
-    fn push_qq(&mut self, qq: Qq) -> &mut Self {
-        self.cycle(|_| None)
-            .cycle(|cpu| cpu.push_byte(cpu.regs.read(qq.high())))
-            .cycle(|cpu| cpu.push_byte(cpu.regs.read(qq.low())))
-            .cycle(|cpu| cpu.fetch())
-    }
-
-    fn pop_qq(&mut self, qq: Qq) -> &mut Self {
-        self.cycle(|cpu| cpu.pop_byte())
-            .cycle(|cpu| {
-                cpu.regs.write(qq.low(), cpu.state.bus_data.unwrap());
-                cpu.pop_byte()
-            })
-            .cycle(|cpu| {
-                cpu.regs.write(qq.high(), cpu.state.bus_data.unwrap());
-                cpu.fetch()
-            })
-    }
-
-    fn ldhl_sp_e(&mut self) -> &mut Self {
-        self.cycle(|cpu| cpu.read_immediate())
-            .cycle(|cpu| {
-                let e = cpu.state.bus_data.unwrap();
-                let (l, flags) = alu::add(low_byte(cpu.regs.sp), e, false);
-                let (h, _) = alu::add(high_byte(cpu.regs.sp), sign_extension(e), flags.cy);
-                cpu.regs.h = h;
-                cpu.regs.l = l;
-                cpu.regs.f = flags;
-                cpu.regs.f.z = false;
+    fn ld_sp_hl(&mut self) -> Option<BusOp> {
+        match self.m_cycle {
+            M2 => {
+                self.regs.sp = self.regs.hl();
                 None
-            })
-            .cycle(|cpu| cpu.fetch())
+            }
+            M3 => self.fetch(),
+            _ => unreachable!(),
+        }
     }
 
-    fn ld_deref_nn_sp(&mut self) -> &mut Self {
-        self.cycle(|cpu| cpu.read_immediate())
-            .cycle(|cpu| {
-                cpu.state.addr = cpu.state.bus_data.unwrap() as u16;
-                cpu.read_immediate()
-            })
-            .cycle(|cpu| {
-                cpu.state.addr |= (cpu.state.bus_data.unwrap() as u16) << 8;
-                Some(BusOp::Write(cpu.state.addr, low_byte(cpu.regs.sp)))
-            })
-            .cycle(|cpu| Some(BusOp::Write(cpu.state.addr + 1, high_byte(cpu.regs.sp))))
-            .cycle(|cpu| cpu.fetch())
+    fn push_qq(&mut self, qq: Qq) -> Option<BusOp> {
+        match self.m_cycle {
+            M2 => None,
+            M3 => self.push_byte(self.regs.read(qq.high())),
+            M4 => self.push_byte(self.regs.read(qq.low())),
+            M5 => self.fetch(),
+            _ => unreachable!(),
+        }
     }
 
-    fn alu_op_r(&mut self, op: AluOp, r: R) -> &mut Self {
-        self.cycle(|cpu| {
-            let (result, flags) = cpu.alu_op(op, cpu.regs.a, cpu.regs.read(r));
-            cpu.regs.a = result;
-            cpu.regs.f = flags;
-            cpu.fetch()
-        })
+    fn pop_qq(&mut self, qq: Qq) -> Option<BusOp> {
+        match self.m_cycle {
+            M2 => self.pop_byte(),
+            M3 => {
+                self.regs.write(qq.low(), self.state.bus_data.unwrap());
+                self.pop_byte()
+            }
+            M4 => {
+                self.regs.write(qq.high(), self.state.bus_data.unwrap());
+                self.fetch()
+            }
+            _ => unreachable!(),
+        }
     }
 
-    fn alu_op_n(&mut self, op: AluOp) -> &mut Self {
-        self.cycle(|cpu| cpu.read_immediate()).cycle(|cpu| {
-            let (result, flags) = cpu.alu_op(op, cpu.regs.a, cpu.state.bus_data.unwrap());
-            cpu.regs.a = result;
-            cpu.regs.f = flags;
-            cpu.fetch()
-        })
-    }
-
-    fn alu_op_deref_hl(&mut self, op: AluOp) -> &mut Self {
-        self.cycle(|cpu| Some(BusOp::Read(cpu.regs.hl())))
-            .cycle(|cpu| {
-                let (result, flags) = cpu.alu_op(op, cpu.regs.a, cpu.state.bus_data.unwrap());
-                cpu.regs.a = result;
-                cpu.regs.f = flags;
-                cpu.fetch()
-            })
-    }
-
-    fn inc_r(&mut self, r: R) -> &mut Self {
-        self.cycle(|cpu| {
-            let (result, flags) = alu::add(cpu.regs.read(r), 1, false);
-            cpu.regs.write(r, result);
-            cpu.regs.f.z = flags.z;
-            cpu.regs.f.n = flags.n;
-            cpu.regs.f.h = flags.h;
-            cpu.fetch()
-        })
-    }
-
-    fn inc_deref_hl(&mut self) -> &mut Self {
-        self.cycle(|cpu| Some(BusOp::Read(cpu.regs.hl())))
-            .cycle(|cpu| {
-                let (result, flags) = alu::add(cpu.state.bus_data.unwrap(), 1, false);
-                cpu.regs.f.z = flags.z;
-                cpu.regs.f.n = flags.n;
-                cpu.regs.f.h = flags.h;
-                Some(BusOp::Write(cpu.regs.hl(), result))
-            })
-            .cycle(|cpu| cpu.fetch())
-    }
-
-    fn jp_nn(&mut self) -> &mut Self {
-        self.cycle(|cpu| cpu.read_immediate())
-            .cycle(|cpu| {
-                cpu.state.data = cpu.state.bus_data.unwrap();
-                cpu.read_immediate()
-            })
-            .cycle(|cpu| {
-                cpu.regs.pc = u16::from_be_bytes([cpu.state.bus_data.unwrap(), cpu.state.data]);
+    fn ldhl_sp_e(&mut self) -> Option<BusOp> {
+        match self.m_cycle {
+            M2 => self.read_immediate(),
+            M3 => {
+                let e = self.state.bus_data.unwrap();
+                let (l, flags) = alu::add(low_byte(self.regs.sp), e, false);
+                let (h, _) = alu::add(high_byte(self.regs.sp), sign_extension(e), flags.cy);
+                self.regs.h = h;
+                self.regs.l = l;
+                self.regs.f = flags;
+                self.regs.f.z = false;
                 None
-            })
-            .cycle(|cpu| cpu.fetch())
+            }
+            M4 => self.fetch(),
+            _ => unreachable!(),
+        }
     }
 
-    fn jp_cc_nn(&mut self, cc: Cc) -> &mut Self {
-        self.cycle(|cpu| cpu.read_immediate())
-            .cycle(|cpu| {
-                cpu.state.data = cpu.state.bus_data.unwrap();
-                cpu.read_immediate()
-            })
-            .cycle(|cpu| {
-                if cpu.evaluate_condition(cc) {
-                    cpu.regs.pc = u16::from_be_bytes([cpu.state.bus_data.unwrap(), cpu.state.data]);
+    fn ld_deref_nn_sp(&mut self) -> Option<BusOp> {
+        match self.m_cycle {
+            M2 => self.read_immediate(),
+            M3 => {
+                self.state.addr = self.state.bus_data.unwrap() as u16;
+                self.read_immediate()
+            }
+            M4 => {
+                self.state.addr |= (self.state.bus_data.unwrap() as u16) << 8;
+                Some(BusOp::Write(self.state.addr, low_byte(self.regs.sp)))
+            }
+            M5 => Some(BusOp::Write(self.state.addr + 1, high_byte(self.regs.sp))),
+            M6 => self.fetch(),
+            _ => unreachable!(),
+        }
+    }
+
+    fn alu_op_r(&mut self, op: AluOp, r: R) -> Option<BusOp> {
+        match self.m_cycle {
+            M2 => {
+                let (result, flags) = self.alu_op(op, self.regs.a, self.regs.read(r));
+                self.regs.a = result;
+                self.regs.f = flags;
+                self.fetch()
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn alu_op_n(&mut self, op: AluOp) -> Option<BusOp> {
+        match self.m_cycle {
+            M2 => self.read_immediate(),
+            M3 => {
+                let (result, flags) = self.alu_op(op, self.regs.a, self.state.bus_data.unwrap());
+                self.regs.a = result;
+                self.regs.f = flags;
+                self.fetch()
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn alu_op_deref_hl(&mut self, op: AluOp) -> Option<BusOp> {
+        match self.m_cycle {
+            M2 => Some(BusOp::Read(self.regs.hl())),
+            M3 => {
+                let (result, flags) = self.alu_op(op, self.regs.a, self.state.bus_data.unwrap());
+                self.regs.a = result;
+                self.regs.f = flags;
+                self.fetch()
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn inc_r(&mut self, r: R) -> Option<BusOp> {
+        match self.m_cycle {
+            M2 => {
+                let (result, flags) = alu::add(self.regs.read(r), 1, false);
+                self.regs.write(r, result);
+                self.regs.f.z = flags.z;
+                self.regs.f.n = flags.n;
+                self.regs.f.h = flags.h;
+                self.fetch()
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn inc_deref_hl(&mut self) -> Option<BusOp> {
+        match self.m_cycle {
+            M2 => Some(BusOp::Read(self.regs.hl())),
+            M3 => {
+                let (result, flags) = alu::add(self.state.bus_data.unwrap(), 1, false);
+                self.regs.f.z = flags.z;
+                self.regs.f.n = flags.n;
+                self.regs.f.h = flags.h;
+                Some(BusOp::Write(self.regs.hl(), result))
+            }
+            M4 => self.fetch(),
+            _ => unreachable!(),
+        }
+    }
+
+    fn jp_nn(&mut self) -> Option<BusOp> {
+        match self.m_cycle {
+            M2 => self.read_immediate(),
+            M3 => {
+                self.state.data = self.state.bus_data.unwrap();
+                self.read_immediate()
+            }
+            M4 => {
+                self.regs.pc = u16::from_be_bytes([self.state.bus_data.unwrap(), self.state.data]);
+                None
+            }
+            M5 => self.fetch(),
+            _ => unreachable!(),
+        }
+    }
+
+    fn jp_cc_nn(&mut self, cc: Cc) -> Option<BusOp> {
+        match self.m_cycle {
+            M2 => self.read_immediate(),
+            M3 => {
+                self.state.data = self.state.bus_data.unwrap();
+                self.read_immediate()
+            }
+            M4 => {
+                if self.evaluate_condition(cc) {
+                    self.regs.pc =
+                        u16::from_be_bytes([self.state.bus_data.unwrap(), self.state.data]);
                     None
                 } else {
-                    cpu.fetch()
+                    self.fetch()
                 }
-            })
-            .cycle(|cpu| cpu.fetch())
+            }
+            M5 => self.fetch(),
+            _ => unreachable!(),
+        }
     }
 
-    fn jr_e(&mut self) -> &mut Self {
-        self.cycle(|cpu| cpu.read_immediate())
-            .cycle(|cpu| {
-                let e = cpu.state.bus_data.unwrap() as i8;
-                cpu.regs.pc = cpu.regs.pc.wrapping_add(e as i16 as u16);
+    fn jr_e(&mut self) -> Option<BusOp> {
+        match self.m_cycle {
+            M2 => self.read_immediate(),
+            M3 => {
+                let e = self.state.bus_data.unwrap() as i8;
+                self.regs.pc = self.regs.pc.wrapping_add(e as i16 as u16);
                 None
-            })
-            .cycle(|cpu| cpu.fetch())
+            }
+            M4 => self.fetch(),
+            _ => unreachable!(),
+        }
     }
 
-    fn jp_deref_hl(&mut self) -> &mut Self {
-        self.cycle(|cpu| {
-            cpu.regs.pc = cpu.regs.hl();
-            cpu.fetch()
-        })
+    fn jp_deref_hl(&mut self) -> Option<BusOp> {
+        match self.m_cycle {
+            M2 => {
+                self.regs.pc = self.regs.hl();
+                self.fetch()
+            }
+            _ => unreachable!(),
+        }
     }
 
-    fn ret(&mut self) -> &mut Self {
-        self.cycle(|cpu| cpu.pop_byte())
-            .cycle(|cpu| {
-                cpu.state.data = cpu.state.bus_data.unwrap();
-                cpu.pop_byte()
-            })
-            .cycle(|cpu| {
-                cpu.regs.pc = u16::from_be_bytes([cpu.state.bus_data.unwrap(), cpu.state.data]);
+    fn ret(&mut self) -> Option<BusOp> {
+        match self.m_cycle {
+            M2 => self.pop_byte(),
+            M3 => {
+                self.state.data = self.state.bus_data.unwrap();
+                self.pop_byte()
+            }
+            M4 => {
+                self.regs.pc = u16::from_be_bytes([self.state.bus_data.unwrap(), self.state.data]);
                 None
-            })
-            .cycle(|cpu| cpu.fetch())
+            }
+            M5 => self.fetch(),
+            _ => unreachable!(),
+        }
     }
 
-    fn cycle<F>(&mut self, f: F) -> &mut Self
-    where
-        F: FnOnce(&mut Self) -> CpuOutput,
-    {
-        let output = if self.m_cycle == self.sweep_m_cycle {
-            Some(f(self))
-        } else {
-            None
-        };
-        self.sweep_m_cycle = self.sweep_m_cycle.next();
-        self.output = self.output.take().or(output);
-        self
-    }
-
-    fn fetch(&mut self) -> CpuOutput {
+    fn fetch(&mut self) -> Option<BusOp> {
         self.state.fetch = true;
         None
     }
