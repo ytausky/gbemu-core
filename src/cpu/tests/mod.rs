@@ -91,6 +91,22 @@ fn two_rets() {
 
 const RET: u8 = 0xc9;
 
+#[test]
+fn dispatch_interrupt_0() {
+    let mut cpu = Cpu::default();
+    cpu.regs.pc = 0x3000;
+    cpu.regs.sp = 0x2000;
+    cpu.test_interrupt_dispatch(0x0000)
+}
+
+#[test]
+fn dispatch_interrupt_1() {
+    let mut cpu = Cpu::default();
+    cpu.regs.pc = 0x3000;
+    cpu.regs.sp = 0x2000;
+    cpu.test_interrupt_dispatch(0x0001)
+}
+
 impl Cpu {
     fn test_simple_instr<'a, I>(&mut self, opcode: &[u8], steps: I)
     where
@@ -126,10 +142,34 @@ impl Cpu {
             assert_eq!(self.step(input), *output)
         }
     }
+
+    fn test_interrupt_dispatch(&mut self, n: u16) {
+        let pc = self.regs.pc;
+        let sp = self.regs.sp;
+        let input = Input {
+            data: None,
+            interrupt_flags: 0x01 << n,
+        };
+        assert_eq!(self.step(&input), None);
+        assert_eq!(self.step(&input), None);
+        assert_eq!(self.step(&input), None);
+        assert_eq!(self.step(&input), None);
+        assert_eq!(self.step(&input), None);
+        assert_eq!(self.step(&input), None);
+        assert_eq!(self.step(&input), Some(BusOp::Write(sp - 1, high_byte(pc))));
+        assert_eq!(self.step(&input), None);
+        assert_eq!(self.step(&input), Some(BusOp::Write(sp - 2, low_byte(pc))));
+        assert_eq!(self.step(&input), None);
+        assert_eq!(self.step(&Input::with_data(None)), Some(BusOp::Read(0x0040 + 8 * n)));
+        assert_eq!(self.step(&Input::with_data(Some(0x00))), None);
+    }
 }
 
 impl Input {
     fn with_data(data: Option<u8>) -> Self {
-        Self { data }
+        Self {
+            data,
+            interrupt_flags: 0x00,
+        }
     }
 }

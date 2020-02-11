@@ -30,6 +30,7 @@ pub struct Cpu {
 
 enum Mode {
     Run(ComplexInstrExecState),
+    Interrupt(InterruptDispatchState),
 }
 
 struct ComplexInstrExecState {
@@ -37,8 +38,13 @@ struct ComplexInstrExecState {
     m_cycle: MCycle,
     bus_data: Option<u8>,
     fetch: bool,
+    interrupt: bool,
     data: u8,
     addr: u16,
+}
+
+struct InterruptDispatchState {
+    m_cycle: MCycle,
 }
 
 #[derive(Clone, Copy)]
@@ -226,6 +232,7 @@ impl Default for ComplexInstrExecState {
             m_cycle: M1,
             bus_data: None,
             fetch: false,
+            interrupt: false,
             data: 0xff,
             addr: 0xffff,
         }
@@ -239,6 +246,13 @@ impl Cpu {
                 regs: &mut self.regs,
                 stage,
                 phase: &self.phase,
+                input,
+            }
+            .step(),
+            Mode::Interrupt(state) => InterruptModeCpu {
+                regs: &mut self.regs,
+                state,
+                phase: self.phase,
                 input,
             }
             .step(),
@@ -257,6 +271,7 @@ impl Cpu {
 #[derive(Clone, Copy)]
 enum ModeTransition {
     Run(Opcode),
+    Interrupt,
 }
 
 impl From<ModeTransition> for Mode {
@@ -267,9 +282,11 @@ impl From<ModeTransition> for Mode {
                 m_cycle: M1,
                 bus_data: None,
                 fetch: false,
+                interrupt: false,
                 data: 0xff,
                 addr: 0xffff,
             }),
+            ModeTransition::Interrupt => Mode::Interrupt(InterruptDispatchState { m_cycle: M2 }),
         }
     }
 }
@@ -294,16 +311,24 @@ impl<'a> RunModeCpu<'a> {
                 .exec_instr();
                 if self.stage.fetch {
                     assert_eq!(output, None);
-                    let pc = self.regs.pc;
-                    self.regs.pc += 1;
-                    output = Some(BusOp::Read(pc))
+                    if self.input.interrupt_flags != 0x00 {
+                        self.stage.interrupt = true;
+                    } else {
+                        let pc = self.regs.pc;
+                        self.regs.pc += 1;
+                        output = Some(BusOp::Read(pc))
+                    }
                 }
                 (None, output)
             }
             Tock => {
                 self.stage.bus_data = self.input.data;
                 let transition = if self.stage.fetch {
-                    Some(ModeTransition::Run(Opcode(self.stage.bus_data.unwrap())))
+                    Some(if self.stage.interrupt {
+                        ModeTransition::Interrupt
+                    } else {
+                        ModeTransition::Run(Opcode(self.stage.bus_data.unwrap()))
+                    })
                 } else {
                     self.stage.m_cycle = self.stage.m_cycle.next();
                     None
@@ -800,6 +825,51 @@ impl<'a> InstrExecution<'a> {
     }
 }
 
+struct InterruptModeCpu<'a> {
+    regs: &'a mut Regs,
+    state: &'a mut InterruptDispatchState,
+    phase: Phase,
+    input: &'a Input,
+}
+
+impl<'a> InterruptModeCpu<'a> {
+    fn step(&mut self) -> (Option<ModeTransition>, CpuOutput) {
+        let output = match self.state.m_cycle {
+            M2 => (None, None),
+            M3 => (None, None),
+            M4 => match self.phase {
+                Tick => {
+                    self.regs.sp -= 1;
+                    (
+                        None,
+                        Some(BusOp::Write(self.regs.sp, high_byte(self.regs.pc))),
+                    )
+                }
+                Tock => (None, None),
+            },
+            M5 => match self.phase {
+                Tick => {
+                    self.regs.sp -= 1;
+                    (
+                        None,
+                        Some(BusOp::Write(self.regs.sp, low_byte(self.regs.pc))),
+                    )
+                }
+                Tock => {
+                    let n = self.input.interrupt_flags.trailing_zeros();
+                    self.regs.pc = 0x0040 + 8 * n as u16;
+                    (Some(ModeTransition::Run(Opcode(0x00))), None)
+                }
+            },
+            _ => unreachable!(),
+        };
+        if self.phase == Tock {
+            self.state.m_cycle = self.state.m_cycle.next();
+        }
+        output
+    }
+}
+
 fn low_byte(addr: u16) -> u8 {
     (addr & 0x00ff) as u8
 }
@@ -825,6 +895,7 @@ struct AluOutput {
 #[derive(Clone)]
 pub struct Input {
     data: Option<u8>,
+    interrupt_flags: u8,
 }
 
 #[derive(Clone, Copy, PartialEq)]
