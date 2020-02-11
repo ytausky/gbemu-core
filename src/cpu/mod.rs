@@ -47,12 +47,6 @@ struct InterruptDispatchState {
     m_cycle: MCycle,
 }
 
-#[derive(Clone, Copy)]
-enum M {
-    R(R),
-    DerefHl,
-}
-
 #[derive(Clone, Copy, PartialEq)]
 enum R {
     A,
@@ -90,22 +84,6 @@ impl From<u8> for R {
             0b100 => R::H,
             0b101 => R::L,
             0b111 => R::A,
-            _ => panic!(),
-        }
-    }
-}
-
-impl From<u8> for M {
-    fn from(encoding: u8) -> Self {
-        match encoding {
-            0b000 => M::R(R::B),
-            0b001 => M::R(R::C),
-            0b010 => M::R(R::D),
-            0b011 => M::R(R::E),
-            0b100 => M::R(R::H),
-            0b101 => M::R(R::L),
-            0b110 => M::DerefHl,
-            0b111 => M::R(R::A),
             _ => panic!(),
         }
     }
