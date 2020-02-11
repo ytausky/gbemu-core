@@ -37,7 +37,7 @@ enum Mode {
 struct InstructionExecutionState {
     opcode: Opcode,
     bus_data: Option<u8>,
-    fetch: bool,
+    m1: bool,
     interrupt: bool,
     data: u8,
     addr: u16,
@@ -205,7 +205,7 @@ impl Default for InstructionExecutionState {
         InstructionExecutionState {
             opcode: Opcode(0x00),
             bus_data: None,
-            fetch: false,
+            m1: false,
             interrupt: false,
             data: 0xff,
             addr: 0xffff,
@@ -257,7 +257,7 @@ impl From<ModeTransition> for Mode {
             ModeTransition::Instruction(opcode) => Mode::Instruction(InstructionExecutionState {
                 opcode,
                 bus_data: None,
-                fetch: false,
+                m1: false,
                 interrupt: false,
                 data: 0xff,
                 addr: 0xffff,
@@ -284,7 +284,7 @@ impl<'a> RunModeCpu<'a> {
                     m_cycle: self.m_cycle,
                 }
                 .exec_instr();
-                if self.state.fetch {
+                if self.state.m1 {
                     assert_eq!(output, None);
                     if input.interrupt_flags != 0x00 {
                         self.state.interrupt = true;
@@ -298,7 +298,7 @@ impl<'a> RunModeCpu<'a> {
             }
             Tock => {
                 self.state.bus_data = input.data;
-                let transition = if self.state.fetch {
+                let transition = if self.state.m1 {
                     Some(if self.state.interrupt {
                         ModeTransition::Interrupt
                     } else {
@@ -365,7 +365,7 @@ impl<'a> InstrExecution<'a> {
 
     fn nop(&mut self) -> Option<BusOp> {
         match self.m_cycle {
-            M2 => self.fetch(),
+            M2 => self.execute_m1(),
             _ => unreachable!(),
         }
     }
@@ -378,7 +378,7 @@ impl<'a> InstrExecution<'a> {
         match self.m_cycle {
             M2 => {
                 self.regs.write(dest, self.regs.read(src));
-                self.fetch()
+                self.execute_m1()
             }
             _ => unreachable!(),
         }
@@ -389,7 +389,7 @@ impl<'a> InstrExecution<'a> {
             M2 => self.read_immediate(),
             M3 => {
                 self.regs.write(dest, self.state.bus_data.unwrap());
-                self.fetch()
+                self.execute_m1()
             }
             _ => unreachable!(),
         }
@@ -400,7 +400,7 @@ impl<'a> InstrExecution<'a> {
             M2 => Some(BusOp::Read(self.regs.hl())),
             M3 => {
                 self.regs.write(dest, self.state.bus_data.unwrap());
-                self.fetch()
+                self.execute_m1()
             }
             _ => unreachable!(),
         }
@@ -409,7 +409,7 @@ impl<'a> InstrExecution<'a> {
     fn ld_deref_hl_r(&mut self, src: R) -> Option<BusOp> {
         match self.m_cycle {
             M2 => Some(BusOp::Write(self.regs.hl(), self.regs.read(src))),
-            M3 => self.fetch(),
+            M3 => self.execute_m1(),
             _ => unreachable!(),
         }
     }
@@ -418,7 +418,7 @@ impl<'a> InstrExecution<'a> {
         match self.m_cycle {
             M2 => self.read_immediate(),
             M3 => Some(BusOp::Write(self.regs.hl(), self.state.bus_data.unwrap())),
-            M4 => self.fetch(),
+            M4 => self.execute_m1(),
             _ => unreachable!(),
         }
     }
@@ -428,7 +428,7 @@ impl<'a> InstrExecution<'a> {
             M2 => Some(BusOp::Read(self.regs.bc())),
             M3 => {
                 self.regs.a = self.state.bus_data.unwrap();
-                self.fetch()
+                self.execute_m1()
             }
             _ => unreachable!(),
         }
@@ -439,7 +439,7 @@ impl<'a> InstrExecution<'a> {
             M2 => Some(BusOp::Read(self.regs.de())),
             M3 => {
                 self.regs.a = self.state.bus_data.unwrap();
-                self.fetch()
+                self.execute_m1()
             }
             _ => unreachable!(),
         }
@@ -450,7 +450,7 @@ impl<'a> InstrExecution<'a> {
             M2 => Some(BusOp::Read(u16::from_be_bytes([0xff, self.regs.c]))),
             M3 => {
                 self.regs.a = self.state.bus_data.unwrap();
-                self.fetch()
+                self.execute_m1()
             }
             _ => unreachable!(),
         }
@@ -462,7 +462,7 @@ impl<'a> InstrExecution<'a> {
                 u16::from_be_bytes([0xff, self.regs.c]),
                 self.regs.a,
             )),
-            M3 => self.fetch(),
+            M3 => self.execute_m1(),
             _ => unreachable!(),
         }
     }
@@ -476,7 +476,7 @@ impl<'a> InstrExecution<'a> {
             ]))),
             M4 => {
                 self.regs.a = self.state.bus_data.unwrap();
-                self.fetch()
+                self.execute_m1()
             }
             _ => unreachable!(),
         }
@@ -489,7 +489,7 @@ impl<'a> InstrExecution<'a> {
                 u16::from_be_bytes([0xff, self.state.bus_data.unwrap()]),
                 self.regs.a,
             )),
-            M4 => self.fetch(),
+            M4 => self.execute_m1(),
             _ => unreachable!(),
         }
     }
@@ -507,7 +507,7 @@ impl<'a> InstrExecution<'a> {
             ]))),
             M5 => {
                 self.regs.a = self.state.bus_data.unwrap();
-                self.fetch()
+                self.execute_m1()
             }
             _ => unreachable!(),
         }
@@ -524,7 +524,7 @@ impl<'a> InstrExecution<'a> {
                 u16::from_be_bytes([self.state.bus_data.unwrap(), self.state.data]),
                 self.regs.a,
             )),
-            M5 => self.fetch(),
+            M5 => self.execute_m1(),
             _ => unreachable!(),
         }
     }
@@ -540,7 +540,7 @@ impl<'a> InstrExecution<'a> {
             }
             M3 => {
                 self.regs.a = self.state.bus_data.unwrap();
-                self.fetch()
+                self.execute_m1()
             }
             _ => unreachable!(),
         }
@@ -557,7 +557,7 @@ impl<'a> InstrExecution<'a> {
             }
             M3 => {
                 self.regs.a = self.state.bus_data.unwrap();
-                self.fetch()
+                self.execute_m1()
             }
             _ => unreachable!(),
         }
@@ -566,7 +566,7 @@ impl<'a> InstrExecution<'a> {
     fn ld_deref_bc_a(&mut self) -> Option<BusOp> {
         match self.m_cycle {
             M2 => Some(BusOp::Write(self.regs.bc(), self.regs.a)),
-            M3 => self.fetch(),
+            M3 => self.execute_m1(),
             _ => unreachable!(),
         }
     }
@@ -574,7 +574,7 @@ impl<'a> InstrExecution<'a> {
     fn ld_deref_de_a(&mut self) -> Option<BusOp> {
         match self.m_cycle {
             M2 => Some(BusOp::Write(self.regs.de(), self.regs.a)),
-            M3 => self.fetch(),
+            M3 => self.execute_m1(),
             _ => unreachable!(),
         }
     }
@@ -588,7 +588,7 @@ impl<'a> InstrExecution<'a> {
                 self.regs.l = low_byte(incremented_hl);
                 Some(BusOp::Write(hl, self.regs.a))
             }
-            M3 => self.fetch(),
+            M3 => self.execute_m1(),
             _ => unreachable!(),
         }
     }
@@ -602,7 +602,7 @@ impl<'a> InstrExecution<'a> {
                 self.regs.l = low_byte(decremented_hl);
                 Some(BusOp::Write(hl, self.regs.a))
             }
-            M3 => self.fetch(),
+            M3 => self.execute_m1(),
             _ => unreachable!(),
         }
     }
@@ -616,7 +616,7 @@ impl<'a> InstrExecution<'a> {
             }
             M4 => {
                 self.regs.write(dd.high(), self.state.bus_data.unwrap());
-                self.fetch()
+                self.execute_m1()
             }
             _ => unreachable!(),
         }
@@ -628,7 +628,7 @@ impl<'a> InstrExecution<'a> {
                 self.regs.sp = self.regs.hl();
                 None
             }
-            M3 => self.fetch(),
+            M3 => self.execute_m1(),
             _ => unreachable!(),
         }
     }
@@ -638,7 +638,7 @@ impl<'a> InstrExecution<'a> {
             M2 => None,
             M3 => self.push_byte(self.regs.read(qq.high())),
             M4 => self.push_byte(self.regs.read(qq.low())),
-            M5 => self.fetch(),
+            M5 => self.execute_m1(),
             _ => unreachable!(),
         }
     }
@@ -652,7 +652,7 @@ impl<'a> InstrExecution<'a> {
             }
             M4 => {
                 self.regs.write(qq.high(), self.state.bus_data.unwrap());
-                self.fetch()
+                self.execute_m1()
             }
             _ => unreachable!(),
         }
@@ -671,7 +671,7 @@ impl<'a> InstrExecution<'a> {
                 self.regs.f.z = false;
                 None
             }
-            M4 => self.fetch(),
+            M4 => self.execute_m1(),
             _ => unreachable!(),
         }
     }
@@ -688,7 +688,7 @@ impl<'a> InstrExecution<'a> {
                 Some(BusOp::Write(self.state.addr, low_byte(self.regs.sp)))
             }
             M5 => Some(BusOp::Write(self.state.addr + 1, high_byte(self.regs.sp))),
-            M6 => self.fetch(),
+            M6 => self.execute_m1(),
             _ => unreachable!(),
         }
     }
@@ -699,7 +699,7 @@ impl<'a> InstrExecution<'a> {
                 let (result, flags) = self.alu_op(op, self.regs.a, self.regs.read(r));
                 self.regs.a = result;
                 self.regs.f = flags;
-                self.fetch()
+                self.execute_m1()
             }
             _ => unreachable!(),
         }
@@ -712,7 +712,7 @@ impl<'a> InstrExecution<'a> {
                 let (result, flags) = self.alu_op(op, self.regs.a, self.state.bus_data.unwrap());
                 self.regs.a = result;
                 self.regs.f = flags;
-                self.fetch()
+                self.execute_m1()
             }
             _ => unreachable!(),
         }
@@ -725,7 +725,7 @@ impl<'a> InstrExecution<'a> {
                 let (result, flags) = self.alu_op(op, self.regs.a, self.state.bus_data.unwrap());
                 self.regs.a = result;
                 self.regs.f = flags;
-                self.fetch()
+                self.execute_m1()
             }
             _ => unreachable!(),
         }
@@ -739,7 +739,7 @@ impl<'a> InstrExecution<'a> {
                 self.regs.f.z = flags.z;
                 self.regs.f.n = flags.n;
                 self.regs.f.h = flags.h;
-                self.fetch()
+                self.execute_m1()
             }
             _ => unreachable!(),
         }
@@ -755,7 +755,7 @@ impl<'a> InstrExecution<'a> {
                 self.regs.f.h = flags.h;
                 Some(BusOp::Write(self.regs.hl(), result))
             }
-            M4 => self.fetch(),
+            M4 => self.execute_m1(),
             _ => unreachable!(),
         }
     }
@@ -771,7 +771,7 @@ impl<'a> InstrExecution<'a> {
                 self.regs.pc = u16::from_be_bytes([self.state.bus_data.unwrap(), self.state.data]);
                 None
             }
-            M5 => self.fetch(),
+            M5 => self.execute_m1(),
             _ => unreachable!(),
         }
     }
@@ -789,10 +789,10 @@ impl<'a> InstrExecution<'a> {
                         u16::from_be_bytes([self.state.bus_data.unwrap(), self.state.data]);
                     None
                 } else {
-                    self.fetch()
+                    self.execute_m1()
                 }
             }
-            M5 => self.fetch(),
+            M5 => self.execute_m1(),
             _ => unreachable!(),
         }
     }
@@ -805,7 +805,7 @@ impl<'a> InstrExecution<'a> {
                 self.regs.pc = self.regs.pc.wrapping_add(e as i16 as u16);
                 None
             }
-            M4 => self.fetch(),
+            M4 => self.execute_m1(),
             _ => unreachable!(),
         }
     }
@@ -814,7 +814,7 @@ impl<'a> InstrExecution<'a> {
         match self.m_cycle {
             M2 => {
                 self.regs.pc = self.regs.hl();
-                self.fetch()
+                self.execute_m1()
             }
             _ => unreachable!(),
         }
@@ -831,13 +831,13 @@ impl<'a> InstrExecution<'a> {
                 self.regs.pc = u16::from_be_bytes([self.state.bus_data.unwrap(), self.state.data]);
                 None
             }
-            M5 => self.fetch(),
+            M5 => self.execute_m1(),
             _ => unreachable!(),
         }
     }
 
-    fn fetch(&mut self) -> Option<BusOp> {
-        self.state.fetch = true;
+    fn execute_m1(&mut self) -> Option<BusOp> {
+        self.state.m1 = true;
         None
     }
 
