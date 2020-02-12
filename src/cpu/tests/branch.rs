@@ -31,14 +31,14 @@ fn jp_nz_nn_branching() {
 #[test]
 fn jp_nz_nn_non_branching() {
     let mut cpu = Cpu::default();
-    cpu.regs.f.z = true;
+    cpu.data.f.z = true;
     cpu.test_simple_instr(&[0xc2, 0x34, 0x12], &[])
 }
 
 #[test]
 fn jp_z_nn_branching() {
     let mut cpu = Cpu::default();
-    cpu.regs.f.z = true;
+    cpu.data.f.z = true;
     cpu.test_opcode(
         &[0xca, 0x34, 0x12],
         &[
@@ -73,14 +73,14 @@ fn jp_nc_nn_branching() {
 #[test]
 fn jp_nc_nn_non_branching() {
     let mut cpu = Cpu::default();
-    cpu.regs.f.cy = true;
+    cpu.data.f.cy = true;
     cpu.test_simple_instr(&[0xd2, 0x34, 0x12], &[])
 }
 
 #[test]
 fn jp_c_nn_branching() {
     let mut cpu = Cpu::default();
-    cpu.regs.f.cy = true;
+    cpu.data.f.cy = true;
     cpu.test_opcode(
         &[0xda, 0x34, 0x12],
         &[
@@ -121,7 +121,7 @@ fn jp_c_nn_non_branching_then_ret() {
 #[test]
 fn jr_e_min_value() {
     let mut cpu = Cpu::default();
-    cpu.regs.pc = 0x1000;
+    cpu.data.pc = 0x1000;
     cpu.test_opcode(
         &[0x18, 0x80],
         &[
@@ -136,7 +136,7 @@ fn jr_e_min_value() {
 #[test]
 fn jr_e_with_carry() {
     let mut cpu = Cpu::default();
-    cpu.regs.pc = 0x1080;
+    cpu.data.pc = 0x1080;
     cpu.test_opcode(
         &[0x18, 0x7e],
         &[
@@ -151,8 +151,8 @@ fn jr_e_with_carry() {
 #[test]
 fn jp_deref_hl() {
     let mut cpu = Cpu::default();
-    cpu.regs.h = 0x12;
-    cpu.regs.l = 0x34;
+    cpu.data.h = 0x12;
+    cpu.data.l = 0x34;
     cpu.test_opcode(
         &[0xe9],
         &[
@@ -160,5 +160,5 @@ fn jp_deref_hl() {
             (Input::with_data(Some(0x00)), None),
         ],
     );
-    assert_eq!(cpu.regs.pc, 0x1235)
+    assert_eq!(cpu.data.pc, 0x1235)
 }

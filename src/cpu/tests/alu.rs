@@ -21,19 +21,19 @@ fn test_add_deref_hl(test_case: &AluTestCase) {
 
 fn test_addition_deref_hl(opcode: &[u8], test_case: &AluTestCase) {
     let mut cpu = Cpu::default();
-    cpu.regs.a = test_case.input.x;
-    cpu.regs.f.cy = test_case.input.carry_in;
-    cpu.regs.h = 0x12;
-    cpu.regs.l = 0x34;
+    cpu.data.a = test_case.input.x;
+    cpu.data.f.cy = test_case.input.carry_in;
+    cpu.data.h = 0x12;
+    cpu.data.l = 0x34;
     cpu.test_simple_instr(
         opcode,
         &[
-            (Input::with_data(None), Some(BusOp::Read(cpu.regs.hl()))),
+            (Input::with_data(None), Some(BusOp::Read(cpu.data.hl()))),
             (Input::with_data(Some(test_case.input.y)), None),
         ],
     );
-    assert_eq!(cpu.regs.a, test_case.expected.result);
-    assert_eq!(cpu.regs.f, test_case.expected.flags)
+    assert_eq!(cpu.data.a, test_case.expected.result);
+    assert_eq!(cpu.data.f, test_case.expected.flags)
 }
 
 #[test]
@@ -64,12 +64,12 @@ fn test_adder_for_all_r<F: Fn(R) -> Vec<u8>>(encoder: &F, test_case: &AluTestCas
 
 fn test_adder<F: Fn(R) -> Vec<u8>>(r: R, encoder: &F, test_case: &AluTestCase) {
     let mut cpu = Cpu::default();
-    cpu.regs.a = test_case.input.x;
-    cpu.regs.write(r, test_case.input.y);
-    cpu.regs.f.cy = test_case.input.carry_in;
+    cpu.data.a = test_case.input.x;
+    cpu.data.write(r, test_case.input.y);
+    cpu.data.f.cy = test_case.input.carry_in;
     cpu.test_simple_instr(&encoder(r), &[]);
-    assert_eq!(cpu.regs.a, test_case.expected.result);
-    assert_eq!(cpu.regs.f, test_case.expected.flags)
+    assert_eq!(cpu.data.a, test_case.expected.result);
+    assert_eq!(cpu.data.f, test_case.expected.flags)
 }
 
 struct AluTestCase {
@@ -172,38 +172,38 @@ const ADDITION_TEST_CASES: &[AluTestCase] = &[
 #[test]
 fn sub_a() {
     let mut cpu = Cpu::default();
-    cpu.regs.a = 0x07;
+    cpu.data.a = 0x07;
     cpu.test_simple_instr(&encode_sub_r(R::A), &[]);
-    assert_eq!(cpu.regs.a, 0);
-    assert_eq!(cpu.regs.f, flags!(z, n))
+    assert_eq!(cpu.data.a, 0);
+    assert_eq!(cpu.data.f, flags!(z, n))
 }
 
 #[test]
 fn sub_b() {
     let mut cpu = Cpu::default();
-    cpu.regs.b = 0x01;
+    cpu.data.b = 0x01;
     cpu.test_simple_instr(&encode_sub_r(R::B), &[]);
-    assert_eq!(cpu.regs.a, 0xff);
-    assert_eq!(cpu.regs.f, flags!(n, h, cy))
+    assert_eq!(cpu.data.a, 0xff);
+    assert_eq!(cpu.data.f, flags!(n, h, cy))
 }
 
 #[test]
 fn sub_c() {
     let mut cpu = Cpu::default();
-    cpu.regs.c = 0x10;
+    cpu.data.c = 0x10;
     cpu.test_simple_instr(&encode_sub_r(R::C), &[]);
-    assert_eq!(cpu.regs.a, 0xf0);
-    assert_eq!(cpu.regs.f, flags!(n, cy))
+    assert_eq!(cpu.data.a, 0xf0);
+    assert_eq!(cpu.data.f, flags!(n, cy))
 }
 
 #[test]
 fn sub_d() {
     let mut cpu = Cpu::default();
-    cpu.regs.a = 0x10;
-    cpu.regs.d = 0x01;
+    cpu.data.a = 0x10;
+    cpu.data.d = 0x01;
     cpu.test_simple_instr(&encode_sub_r(R::D), &[]);
-    assert_eq!(cpu.regs.a, 0x0f);
-    assert_eq!(cpu.regs.f, flags!(n, h))
+    assert_eq!(cpu.data.a, 0x0f);
+    assert_eq!(cpu.data.f, flags!(n, h))
 }
 
 fn encode_sub_r(r: R) -> Vec<u8> {
@@ -213,30 +213,30 @@ fn encode_sub_r(r: R) -> Vec<u8> {
 #[test]
 fn sub_n() {
     let mut cpu = Cpu::default();
-    cpu.regs.a = 0x07;
+    cpu.data.a = 0x07;
     cpu.test_simple_instr(&[0b11_010_110, 0x05], &[]);
-    assert_eq!(cpu.regs.a, 0x02);
-    assert_eq!(cpu.regs.f, flags!(n))
+    assert_eq!(cpu.data.a, 0x02);
+    assert_eq!(cpu.data.f, flags!(n))
 }
 
 #[test]
 fn sbc_a() {
     let mut cpu = Cpu::default();
-    cpu.regs.a = 0x07;
+    cpu.data.a = 0x07;
     cpu.test_simple_instr(&encode_sbc_r(R::A), &[]);
-    assert_eq!(cpu.regs.a, 0);
-    assert_eq!(cpu.regs.f, flags!(z, n))
+    assert_eq!(cpu.data.a, 0);
+    assert_eq!(cpu.data.f, flags!(z, n))
 }
 
 #[test]
 fn sbc_b() {
     let mut cpu = Cpu::default();
-    cpu.regs.a = 0x07;
-    cpu.regs.b = 0x07;
-    cpu.regs.f.cy = true;
+    cpu.data.a = 0x07;
+    cpu.data.b = 0x07;
+    cpu.data.f.cy = true;
     cpu.test_simple_instr(&encode_sbc_r(R::B), &[]);
-    assert_eq!(cpu.regs.a, 0xff);
-    assert_eq!(cpu.regs.f, flags!(n, h, cy))
+    assert_eq!(cpu.data.a, 0xff);
+    assert_eq!(cpu.data.f, flags!(n, h, cy))
 }
 
 fn encode_sbc_r(r: R) -> Vec<u8> {
@@ -246,30 +246,30 @@ fn encode_sbc_r(r: R) -> Vec<u8> {
 #[test]
 fn and_a() {
     let mut cpu = Cpu::default();
-    cpu.regs.a = 0x42;
+    cpu.data.a = 0x42;
     cpu.test_simple_instr(&encode_and_r(R::A), &[]);
-    assert_eq!(cpu.regs.a, 0x42);
-    assert_eq!(cpu.regs.f, flags!(h))
+    assert_eq!(cpu.data.a, 0x42);
+    assert_eq!(cpu.data.f, flags!(h))
 }
 
 #[test]
 fn and_b() {
     let mut cpu = Cpu::default();
-    cpu.regs.a = 0x0f;
-    cpu.regs.b = 0x55;
+    cpu.data.a = 0x0f;
+    cpu.data.b = 0x55;
     cpu.test_simple_instr(&encode_and_r(R::B), &[]);
-    assert_eq!(cpu.regs.a, 0x05);
-    assert_eq!(cpu.regs.f, flags!(h))
+    assert_eq!(cpu.data.a, 0x05);
+    assert_eq!(cpu.data.f, flags!(h))
 }
 
 #[test]
 fn and_c() {
     let mut cpu = Cpu::default();
-    cpu.regs.a = 0x0f;
-    cpu.regs.b = 0xf0;
+    cpu.data.a = 0x0f;
+    cpu.data.b = 0xf0;
     cpu.test_simple_instr(&encode_and_r(R::C), &[]);
-    assert_eq!(cpu.regs.a, 0x00);
-    assert_eq!(cpu.regs.f, flags!(z, h))
+    assert_eq!(cpu.data.a, 0x00);
+    assert_eq!(cpu.data.f, flags!(z, h))
 }
 
 fn encode_and_r(r: R) -> Vec<u8> {
@@ -279,20 +279,20 @@ fn encode_and_r(r: R) -> Vec<u8> {
 #[test]
 fn xor_a() {
     let mut cpu = Cpu::default();
-    cpu.regs.a = 0x42;
+    cpu.data.a = 0x42;
     cpu.test_simple_instr(&encode_xor_r(R::A), &[]);
-    assert_eq!(cpu.regs.a, 0x00);
-    assert_eq!(cpu.regs.f, flags!(z))
+    assert_eq!(cpu.data.a, 0x00);
+    assert_eq!(cpu.data.f, flags!(z))
 }
 
 #[test]
 fn xor_b() {
     let mut cpu = Cpu::default();
-    cpu.regs.a = 0x55;
-    cpu.regs.b = 0xaa;
+    cpu.data.a = 0x55;
+    cpu.data.b = 0xaa;
     cpu.test_simple_instr(&encode_xor_r(R::B), &[]);
-    assert_eq!(cpu.regs.a, 0xff);
-    assert_eq!(cpu.regs.f, flags!())
+    assert_eq!(cpu.data.a, 0xff);
+    assert_eq!(cpu.data.f, flags!())
 }
 
 fn encode_xor_r(r: R) -> Vec<u8> {
@@ -302,38 +302,38 @@ fn encode_xor_r(r: R) -> Vec<u8> {
 #[test]
 fn or_a() {
     let mut cpu = Cpu::default();
-    cpu.regs.a = 0x55;
+    cpu.data.a = 0x55;
     cpu.test_simple_instr(&encode_or_r(R::A), &[]);
-    assert_eq!(cpu.regs.a, 0x55);
-    assert_eq!(cpu.regs.f, flags!())
+    assert_eq!(cpu.data.a, 0x55);
+    assert_eq!(cpu.data.f, flags!())
 }
 
 #[test]
 fn or_b() {
     let mut cpu = Cpu::default();
-    cpu.regs.a = 0x05;
-    cpu.regs.b = 0x55;
+    cpu.data.a = 0x05;
+    cpu.data.b = 0x55;
     cpu.test_simple_instr(&encode_or_r(R::B), &[]);
-    assert_eq!(cpu.regs.a, 0x55);
-    assert_eq!(cpu.regs.f, flags!())
+    assert_eq!(cpu.data.a, 0x55);
+    assert_eq!(cpu.data.f, flags!())
 }
 
 #[test]
 fn or_c() {
     let mut cpu = Cpu::default();
-    cpu.regs.a = 0x05;
-    cpu.regs.c = 0x54;
+    cpu.data.a = 0x05;
+    cpu.data.c = 0x54;
     cpu.test_simple_instr(&encode_or_r(R::C), &[]);
-    assert_eq!(cpu.regs.a, 0x55);
-    assert_eq!(cpu.regs.f, flags!())
+    assert_eq!(cpu.data.a, 0x55);
+    assert_eq!(cpu.data.f, flags!())
 }
 
 #[test]
 fn or_d() {
     let mut cpu = Cpu::default();
     cpu.test_simple_instr(&encode_or_r(R::D), &[]);
-    assert_eq!(cpu.regs.a, 0x00);
-    assert_eq!(cpu.regs.f, flags!(z))
+    assert_eq!(cpu.data.a, 0x00);
+    assert_eq!(cpu.data.f, flags!(z))
 }
 
 fn encode_or_r(r: R) -> Vec<u8> {
@@ -343,38 +343,38 @@ fn encode_or_r(r: R) -> Vec<u8> {
 #[test]
 fn cp_a() {
     let mut cpu = Cpu::default();
-    cpu.regs.a = 0x07;
+    cpu.data.a = 0x07;
     cpu.test_simple_instr(&encode_cp_r(R::A), &[]);
-    assert_eq!(cpu.regs.a, 0x07);
-    assert_eq!(cpu.regs.f, flags!(z, n))
+    assert_eq!(cpu.data.a, 0x07);
+    assert_eq!(cpu.data.f, flags!(z, n))
 }
 
 #[test]
 fn cp_b() {
     let mut cpu = Cpu::default();
-    cpu.regs.b = 0x01;
+    cpu.data.b = 0x01;
     cpu.test_simple_instr(&encode_cp_r(R::B), &[]);
-    assert_eq!(cpu.regs.a, 0x00);
-    assert_eq!(cpu.regs.f, flags!(n, h, cy))
+    assert_eq!(cpu.data.a, 0x00);
+    assert_eq!(cpu.data.f, flags!(n, h, cy))
 }
 
 #[test]
 fn cp_c() {
     let mut cpu = Cpu::default();
-    cpu.regs.c = 0x10;
+    cpu.data.c = 0x10;
     cpu.test_simple_instr(&encode_cp_r(R::C), &[]);
-    assert_eq!(cpu.regs.a, 0x00);
-    assert_eq!(cpu.regs.f, flags!(n, cy))
+    assert_eq!(cpu.data.a, 0x00);
+    assert_eq!(cpu.data.f, flags!(n, cy))
 }
 
 #[test]
 fn cp_d() {
     let mut cpu = Cpu::default();
-    cpu.regs.a = 0x10;
-    cpu.regs.d = 0x01;
+    cpu.data.a = 0x10;
+    cpu.data.d = 0x01;
     cpu.test_simple_instr(&encode_cp_r(R::D), &[]);
-    assert_eq!(cpu.regs.a, 0x10);
-    assert_eq!(cpu.regs.f, flags!(n, h))
+    assert_eq!(cpu.data.a, 0x10);
+    assert_eq!(cpu.data.f, flags!(n, h))
 }
 
 fn encode_cp_r(r: R) -> Vec<u8> {
@@ -418,10 +418,10 @@ fn inc_l() {
 
 fn test_inc_r(r: R) {
     let mut cpu = Cpu::default();
-    cpu.regs.write(r, 0xff);
+    cpu.data.write(r, 0xff);
     cpu.test_simple_instr(&encode_inc_r(r), &[]);
-    assert_eq!(cpu.regs.read(r), 0x00);
-    assert_eq!(cpu.regs.f, flags!(z, h))
+    assert_eq!(cpu.data.read(r), 0x00);
+    assert_eq!(cpu.data.f, flags!(z, h))
 }
 
 fn encode_inc_r(r: R) -> Vec<u8> {
@@ -431,8 +431,8 @@ fn encode_inc_r(r: R) -> Vec<u8> {
 #[test]
 fn inc_deref_hl() {
     let mut cpu = Cpu::default();
-    cpu.regs.h = 0x12;
-    cpu.regs.l = 0x34;
+    cpu.data.h = 0x12;
+    cpu.data.l = 0x34;
     cpu.test_simple_instr(
         &[0b00_110_100],
         &[
@@ -442,5 +442,5 @@ fn inc_deref_hl() {
             (Input::with_data(None), None),
         ],
     );
-    assert_eq!(cpu.regs.f, flags!())
+    assert_eq!(cpu.data.f, flags!())
 }

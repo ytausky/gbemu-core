@@ -43,7 +43,7 @@ impl Qq {
 #[test]
 fn ret() {
     let mut cpu = Cpu::default();
-    cpu.regs.sp = 0x1234;
+    cpu.data.sp = 0x1234;
     cpu.test_opcode(
         &[RET],
         &[
@@ -58,13 +58,13 @@ fn ret() {
             (Input::with_data(Some(0x00)), None),
         ],
     );
-    assert_eq!(cpu.regs.sp, 0x1236)
+    assert_eq!(cpu.data.sp, 0x1236)
 }
 
 #[test]
 fn two_rets() {
     let mut cpu = Cpu::default();
-    cpu.regs.sp = 0x1234;
+    cpu.data.sp = 0x1234;
     cpu.test_opcode(
         &[RET],
         &[
@@ -86,7 +86,7 @@ fn two_rets() {
             (Input::with_data(Some(0x00)), None),
         ],
     );
-    assert_eq!(cpu.regs.sp, 0x1238)
+    assert_eq!(cpu.data.sp, 0x1238)
 }
 
 const RET: u8 = 0xc9;
@@ -94,9 +94,9 @@ const RET: u8 = 0xc9;
 #[test]
 fn dispatch_interrupt_0() {
     let mut cpu = Cpu::default();
-    cpu.regs.pc = 0x3000;
-    cpu.regs.sp = 0x2000;
-    cpu.ie = 0x01;
+    cpu.data.pc = 0x3000;
+    cpu.data.sp = 0x2000;
+    cpu.data.ie = 0x01;
     cpu.test_interrupt_dispatch(0x0000)
 }
 
@@ -131,9 +131,9 @@ fn disabled_interrupt_0_does_not_cause_interrupt_dispatch() {
 #[test]
 fn dispatch_interrupt_1() {
     let mut cpu = Cpu::default();
-    cpu.regs.pc = 0x3000;
-    cpu.regs.sp = 0x2000;
-    cpu.ie = 0x02;
+    cpu.data.pc = 0x3000;
+    cpu.data.sp = 0x2000;
+    cpu.data.ie = 0x02;
     cpu.test_interrupt_dispatch(0x0001)
 }
 
@@ -148,7 +148,7 @@ impl Cpu {
             .chain(vec![
                 (
                     Input::with_data(None),
-                    Some(BusOp::Read(self.regs.pc + opcode.len() as u16)),
+                    Some(BusOp::Read(self.data.pc + opcode.len() as u16)),
                 ),
                 (Input::with_data(Some(0x00)), None),
             ])
@@ -160,7 +160,7 @@ impl Cpu {
     where
         I: IntoIterator<Item = &'a (Input, CpuOutput)>,
     {
-        let pc = self.regs.pc;
+        let pc = self.data.pc;
         for (i, byte) in opcode.iter().enumerate() {
             assert_eq!(
                 self.step(&Input::with_data(None)),
@@ -174,11 +174,11 @@ impl Cpu {
     }
 
     fn test_interrupt_dispatch(&mut self, n: u16) {
-        let pc = self.regs.pc;
-        let sp = self.regs.sp;
+        let pc = self.data.pc;
+        let sp = self.data.sp;
         let r#if = 0x01 << n;
         let input = Input { data: None, r#if };
-        self.ime = true;
+        self.data.ime = true;
         assert_eq!(self.step(&input), Some(BusOp::Read(pc)));
         assert_eq!(
             self.step(&Input {
@@ -195,7 +195,7 @@ impl Cpu {
         assert_eq!(self.step(&input), None);
         assert_eq!(self.step(&input), Some(BusOp::Write(sp - 2, low_byte(pc))));
         assert_eq!(self.step(&input), None);
-        assert!(!self.ime);
+        assert!(!self.data.ime);
         assert_eq!(
             self.step(&Input::with_data(None)),
             Some(BusOp::Read(0x0040 + 8 * n))

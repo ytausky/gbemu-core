@@ -1,5 +1,5 @@
-use self::{MCycle::*, Phase::*};
 use self::instruction::RunModeCpu;
+use self::{MCycle::*, Phase::*};
 
 use std::ops::{BitAnd, BitOr, Not};
 
@@ -25,16 +25,12 @@ mod instruction;
 mod tests;
 
 pub struct Cpu {
-    pub regs: Regs,
-    pub ie: u8,
-    pub ime: bool,
+    pub data: Data,
     state: State,
-    m_cycle: MCycle,
-    phase: Phase,
 }
 
 #[derive(Default)]
-pub struct Regs {
+pub struct Data {
     pub a: u8,
     pub f: Flags,
     pub b: u8,
@@ -45,6 +41,10 @@ pub struct Regs {
     pub l: u8,
     pub pc: u16,
     pub sp: u16,
+    pub ie: u8,
+    pub ime: bool,
+    m_cycle: MCycle,
+    phase: Phase,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -214,15 +214,17 @@ impl MCycle {
     }
 }
 
+impl Default for MCycle {
+    fn default() -> Self {
+        M2
+    }
+}
+
 impl Default for Cpu {
     fn default() -> Self {
         Self {
-            regs: Default::default(),
-            ie: 0x00,
-            ime: false,
+            data: Default::default(),
             state: State::Instruction(Default::default()),
-            m_cycle: M2,
-            phase: Tick,
         }
     }
 }
@@ -243,31 +245,25 @@ impl Cpu {
     pub fn step(&mut self, input: &Input) -> CpuOutput {
         let (mode_transition, output) = match &mut self.state {
             State::Instruction(state) => RunModeCpu {
-                regs: &mut self.regs,
-                ie: &mut self.ie,
+                data: &mut self.data,
                 state,
-                m_cycle: self.m_cycle,
-                phase: self.phase,
             }
             .step(input),
             State::Interrupt => InterruptModeCpu {
-                regs: &mut self.regs,
-                ime: &mut self.ime,
-                m_cycle: self.m_cycle,
-                phase: self.phase,
+                data: &mut self.data,
             }
             .step(input),
         };
-        self.phase = match self.phase {
+        self.data.phase = match self.data.phase {
             Tick => Tock,
             Tock => {
-                self.m_cycle = self.m_cycle.next();
+                self.data.m_cycle = self.data.m_cycle.next();
                 Tick
             }
         };
         if let Some(transition) = mode_transition {
             self.state = transition.into();
-            self.m_cycle = M2;
+            self.data.m_cycle = M2;
         }
         output
     }
@@ -295,39 +291,36 @@ impl From<ModeTransition> for State {
 }
 
 struct InterruptModeCpu<'a> {
-    regs: &'a mut Regs,
-    ime: &'a mut bool,
-    m_cycle: MCycle,
-    phase: Phase,
+    data: &'a mut Data,
 }
 
 impl<'a> InterruptModeCpu<'a> {
     fn step(&mut self, input: &Input) -> (Option<ModeTransition>, CpuOutput) {
-        match self.m_cycle {
+        match self.data.m_cycle {
             M2 => (None, None),
             M3 => (None, None),
-            M4 => match self.phase {
+            M4 => match self.data.phase {
                 Tick => {
-                    self.regs.sp -= 1;
+                    self.data.sp -= 1;
                     (
                         None,
-                        Some(BusOp::Write(self.regs.sp, high_byte(self.regs.pc))),
+                        Some(BusOp::Write(self.data.sp, high_byte(self.data.pc))),
                     )
                 }
                 Tock => (None, None),
             },
-            M5 => match self.phase {
+            M5 => match self.data.phase {
                 Tick => {
-                    self.regs.sp -= 1;
+                    self.data.sp -= 1;
                     (
                         None,
-                        Some(BusOp::Write(self.regs.sp, low_byte(self.regs.pc))),
+                        Some(BusOp::Write(self.data.sp, low_byte(self.data.pc))),
                     )
                 }
                 Tock => {
-                    *self.ime = false;
+                    self.data.ime = false;
                     let n = input.r#if.trailing_zeros();
-                    self.regs.pc = 0x0040 + 8 * n as u16;
+                    self.data.pc = 0x0040 + 8 * n as u16;
                     (Some(ModeTransition::Instruction(Opcode(0x00))), None)
                 }
             },
@@ -370,6 +363,12 @@ enum Phase {
     Tock,
 }
 
+impl Default for Phase {
+    fn default() -> Self {
+        Tick
+    }
+}
+
 type CpuOutput = Option<BusOp>;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -385,7 +384,7 @@ enum RegSelect {
     SpL,
 }
 
-impl Regs {
+impl Data {
     fn bc(&self) -> u16 {
         self.pair(R::B, R::C)
     }

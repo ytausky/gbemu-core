@@ -1,21 +1,17 @@
 use super::*;
 
 pub(super) struct RunModeCpu<'a> {
-    pub regs: &'a mut Regs,
-    pub ie: &'a mut u8,
+    pub data: &'a mut Data,
     pub state: &'a mut InstructionExecutionState,
-    pub m_cycle: MCycle,
-    pub phase: Phase,
 }
 
 impl<'a> RunModeCpu<'a> {
     pub fn step(&mut self, input: &Input) -> (Option<ModeTransition>, CpuOutput) {
-        match self.phase {
+        match self.data.phase {
             Tick => {
                 let output = InstrExecution {
-                    regs: self.regs,
+                    data: self.data,
                     state: self.state,
-                    m_cycle: self.m_cycle,
                 }
                 .exec_instr();
                 (None, output)
@@ -23,10 +19,10 @@ impl<'a> RunModeCpu<'a> {
             Tock => {
                 self.state.bus_data = input.data;
                 let transition = if self.state.m1 {
-                    Some(if input.r#if & *self.ie != 0x00 {
+                    Some(if input.r#if & self.data.ie != 0x00 {
                         ModeTransition::Interrupt
                     } else {
-                        self.regs.pc += 1;
+                        self.data.pc += 1;
                         ModeTransition::Instruction(Opcode(self.state.bus_data.unwrap()))
                     })
                 } else {
@@ -39,9 +35,8 @@ impl<'a> RunModeCpu<'a> {
 }
 
 struct InstrExecution<'a> {
-    regs: &'a mut Regs,
+    data: &'a mut Data,
     state: &'a mut InstructionExecutionState,
-    m_cycle: MCycle,
 }
 
 impl<'a> InstrExecution<'a> {
@@ -89,7 +84,7 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn nop(&mut self) -> Option<BusOp> {
-        match self.m_cycle {
+        match self.data.m_cycle {
             M2 => self.execute_m1(),
             _ => unreachable!(),
         }
@@ -100,9 +95,9 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ld_r_r(&mut self, dest: R, src: R) -> Option<BusOp> {
-        match self.m_cycle {
+        match self.data.m_cycle {
             M2 => {
-                self.regs.write(dest, self.regs.read(src));
+                self.data.write(dest, self.data.read(src));
                 self.execute_m1()
             }
             _ => unreachable!(),
@@ -110,10 +105,10 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ld_r_n(&mut self, dest: R) -> Option<BusOp> {
-        match self.m_cycle {
+        match self.data.m_cycle {
             M2 => self.read_immediate(),
             M3 => {
-                self.regs.write(dest, self.state.bus_data.unwrap());
+                self.data.write(dest, self.state.bus_data.unwrap());
                 self.execute_m1()
             }
             _ => unreachable!(),
@@ -121,10 +116,10 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ld_r_deref_hl(&mut self, dest: R) -> Option<BusOp> {
-        match self.m_cycle {
-            M2 => Some(BusOp::Read(self.regs.hl())),
+        match self.data.m_cycle {
+            M2 => Some(BusOp::Read(self.data.hl())),
             M3 => {
-                self.regs.write(dest, self.state.bus_data.unwrap());
+                self.data.write(dest, self.state.bus_data.unwrap());
                 self.execute_m1()
             }
             _ => unreachable!(),
@@ -132,27 +127,27 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ld_deref_hl_r(&mut self, src: R) -> Option<BusOp> {
-        match self.m_cycle {
-            M2 => Some(BusOp::Write(self.regs.hl(), self.regs.read(src))),
+        match self.data.m_cycle {
+            M2 => Some(BusOp::Write(self.data.hl(), self.data.read(src))),
             M3 => self.execute_m1(),
             _ => unreachable!(),
         }
     }
 
     fn ld_deref_hl_n(&mut self) -> Option<BusOp> {
-        match self.m_cycle {
+        match self.data.m_cycle {
             M2 => self.read_immediate(),
-            M3 => Some(BusOp::Write(self.regs.hl(), self.state.bus_data.unwrap())),
+            M3 => Some(BusOp::Write(self.data.hl(), self.state.bus_data.unwrap())),
             M4 => self.execute_m1(),
             _ => unreachable!(),
         }
     }
 
     fn ld_a_deref_bc(&mut self) -> Option<BusOp> {
-        match self.m_cycle {
-            M2 => Some(BusOp::Read(self.regs.bc())),
+        match self.data.m_cycle {
+            M2 => Some(BusOp::Read(self.data.bc())),
             M3 => {
-                self.regs.a = self.state.bus_data.unwrap();
+                self.data.a = self.state.bus_data.unwrap();
                 self.execute_m1()
             }
             _ => unreachable!(),
@@ -160,10 +155,10 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ld_a_deref_de(&mut self) -> Option<BusOp> {
-        match self.m_cycle {
-            M2 => Some(BusOp::Read(self.regs.de())),
+        match self.data.m_cycle {
+            M2 => Some(BusOp::Read(self.data.de())),
             M3 => {
-                self.regs.a = self.state.bus_data.unwrap();
+                self.data.a = self.state.bus_data.unwrap();
                 self.execute_m1()
             }
             _ => unreachable!(),
@@ -171,10 +166,10 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ld_a_deref_c(&mut self) -> Option<BusOp> {
-        match self.m_cycle {
-            M2 => Some(BusOp::Read(u16::from_be_bytes([0xff, self.regs.c]))),
+        match self.data.m_cycle {
+            M2 => Some(BusOp::Read(u16::from_be_bytes([0xff, self.data.c]))),
             M3 => {
-                self.regs.a = self.state.bus_data.unwrap();
+                self.data.a = self.state.bus_data.unwrap();
                 self.execute_m1()
             }
             _ => unreachable!(),
@@ -182,10 +177,10 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ld_deref_c_a(&mut self) -> Option<BusOp> {
-        match self.m_cycle {
+        match self.data.m_cycle {
             M2 => Some(BusOp::Write(
-                u16::from_be_bytes([0xff, self.regs.c]),
-                self.regs.a,
+                u16::from_be_bytes([0xff, self.data.c]),
+                self.data.a,
             )),
             M3 => self.execute_m1(),
             _ => unreachable!(),
@@ -193,14 +188,14 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ld_a_deref_n(&mut self) -> Option<BusOp> {
-        match self.m_cycle {
+        match self.data.m_cycle {
             M2 => self.read_immediate(),
             M3 => Some(BusOp::Read(u16::from_be_bytes([
                 0xff,
                 self.state.bus_data.unwrap(),
             ]))),
             M4 => {
-                self.regs.a = self.state.bus_data.unwrap();
+                self.data.a = self.state.bus_data.unwrap();
                 self.execute_m1()
             }
             _ => unreachable!(),
@@ -208,11 +203,11 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ld_deref_n_a(&mut self) -> Option<BusOp> {
-        match self.m_cycle {
+        match self.data.m_cycle {
             M2 => self.read_immediate(),
             M3 => Some(BusOp::Write(
                 u16::from_be_bytes([0xff, self.state.bus_data.unwrap()]),
-                self.regs.a,
+                self.data.a,
             )),
             M4 => self.execute_m1(),
             _ => unreachable!(),
@@ -220,7 +215,7 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ld_a_deref_nn(&mut self) -> Option<BusOp> {
-        match self.m_cycle {
+        match self.data.m_cycle {
             M2 => self.read_immediate(),
             M3 => {
                 self.state.data = self.state.bus_data.unwrap();
@@ -231,7 +226,7 @@ impl<'a> InstrExecution<'a> {
                 self.state.data,
             ]))),
             M5 => {
-                self.regs.a = self.state.bus_data.unwrap();
+                self.data.a = self.state.bus_data.unwrap();
                 self.execute_m1()
             }
             _ => unreachable!(),
@@ -239,7 +234,7 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ld_deref_nn_a(&mut self) -> Option<BusOp> {
-        match self.m_cycle {
+        match self.data.m_cycle {
             M2 => self.read_immediate(),
             M3 => {
                 self.state.data = self.state.bus_data.unwrap();
@@ -247,7 +242,7 @@ impl<'a> InstrExecution<'a> {
             }
             M4 => Some(BusOp::Write(
                 u16::from_be_bytes([self.state.bus_data.unwrap(), self.state.data]),
-                self.regs.a,
+                self.data.a,
             )),
             M5 => self.execute_m1(),
             _ => unreachable!(),
@@ -255,16 +250,16 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ld_a_deref_hli(&mut self) -> Option<BusOp> {
-        match self.m_cycle {
+        match self.data.m_cycle {
             M2 => {
-                let hl = self.regs.hl();
+                let hl = self.data.hl();
                 let incremented_hl = hl + 1;
-                self.regs.h = high_byte(incremented_hl);
-                self.regs.l = low_byte(incremented_hl);
+                self.data.h = high_byte(incremented_hl);
+                self.data.l = low_byte(incremented_hl);
                 Some(BusOp::Read(hl))
             }
             M3 => {
-                self.regs.a = self.state.bus_data.unwrap();
+                self.data.a = self.state.bus_data.unwrap();
                 self.execute_m1()
             }
             _ => unreachable!(),
@@ -272,16 +267,16 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ld_a_deref_hld(&mut self) -> Option<BusOp> {
-        match self.m_cycle {
+        match self.data.m_cycle {
             M2 => {
-                let hl = self.regs.hl();
+                let hl = self.data.hl();
                 let decremented_hl = hl - 1;
-                self.regs.h = high_byte(decremented_hl);
-                self.regs.l = low_byte(decremented_hl);
+                self.data.h = high_byte(decremented_hl);
+                self.data.l = low_byte(decremented_hl);
                 Some(BusOp::Read(hl))
             }
             M3 => {
-                self.regs.a = self.state.bus_data.unwrap();
+                self.data.a = self.state.bus_data.unwrap();
                 self.execute_m1()
             }
             _ => unreachable!(),
@@ -289,29 +284,29 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ld_deref_bc_a(&mut self) -> Option<BusOp> {
-        match self.m_cycle {
-            M2 => Some(BusOp::Write(self.regs.bc(), self.regs.a)),
+        match self.data.m_cycle {
+            M2 => Some(BusOp::Write(self.data.bc(), self.data.a)),
             M3 => self.execute_m1(),
             _ => unreachable!(),
         }
     }
 
     fn ld_deref_de_a(&mut self) -> Option<BusOp> {
-        match self.m_cycle {
-            M2 => Some(BusOp::Write(self.regs.de(), self.regs.a)),
+        match self.data.m_cycle {
+            M2 => Some(BusOp::Write(self.data.de(), self.data.a)),
             M3 => self.execute_m1(),
             _ => unreachable!(),
         }
     }
 
     fn ld_deref_hli_a(&mut self) -> Option<BusOp> {
-        match self.m_cycle {
+        match self.data.m_cycle {
             M2 => {
-                let hl = self.regs.hl();
+                let hl = self.data.hl();
                 let incremented_hl = hl.wrapping_add(1);
-                self.regs.h = high_byte(incremented_hl);
-                self.regs.l = low_byte(incremented_hl);
-                Some(BusOp::Write(hl, self.regs.a))
+                self.data.h = high_byte(incremented_hl);
+                self.data.l = low_byte(incremented_hl);
+                Some(BusOp::Write(hl, self.data.a))
             }
             M3 => self.execute_m1(),
             _ => unreachable!(),
@@ -319,13 +314,13 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ld_deref_hld_a(&mut self) -> Option<BusOp> {
-        match self.m_cycle {
+        match self.data.m_cycle {
             M2 => {
-                let hl = self.regs.hl();
+                let hl = self.data.hl();
                 let decremented_hl = hl - 1;
-                self.regs.h = high_byte(decremented_hl);
-                self.regs.l = low_byte(decremented_hl);
-                Some(BusOp::Write(hl, self.regs.a))
+                self.data.h = high_byte(decremented_hl);
+                self.data.l = low_byte(decremented_hl);
+                Some(BusOp::Write(hl, self.data.a))
             }
             M3 => self.execute_m1(),
             _ => unreachable!(),
@@ -333,14 +328,14 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ld_dd_nn(&mut self, dd: Dd) -> Option<BusOp> {
-        match self.m_cycle {
+        match self.data.m_cycle {
             M2 => self.read_immediate(),
             M3 => {
-                self.regs.write(dd.low(), self.state.bus_data.unwrap());
+                self.data.write(dd.low(), self.state.bus_data.unwrap());
                 self.read_immediate()
             }
             M4 => {
-                self.regs.write(dd.high(), self.state.bus_data.unwrap());
+                self.data.write(dd.high(), self.state.bus_data.unwrap());
                 self.execute_m1()
             }
             _ => unreachable!(),
@@ -348,9 +343,9 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ld_sp_hl(&mut self) -> Option<BusOp> {
-        match self.m_cycle {
+        match self.data.m_cycle {
             M2 => {
-                self.regs.sp = self.regs.hl();
+                self.data.sp = self.data.hl();
                 None
             }
             M3 => self.execute_m1(),
@@ -359,24 +354,24 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn push_qq(&mut self, qq: Qq) -> Option<BusOp> {
-        match self.m_cycle {
+        match self.data.m_cycle {
             M2 => None,
-            M3 => self.push_byte(self.regs.read(qq.high())),
-            M4 => self.push_byte(self.regs.read(qq.low())),
+            M3 => self.push_byte(self.data.read(qq.high())),
+            M4 => self.push_byte(self.data.read(qq.low())),
             M5 => self.execute_m1(),
             _ => unreachable!(),
         }
     }
 
     fn pop_qq(&mut self, qq: Qq) -> Option<BusOp> {
-        match self.m_cycle {
+        match self.data.m_cycle {
             M2 => self.pop_byte(),
             M3 => {
-                self.regs.write(qq.low(), self.state.bus_data.unwrap());
+                self.data.write(qq.low(), self.state.bus_data.unwrap());
                 self.pop_byte()
             }
             M4 => {
-                self.regs.write(qq.high(), self.state.bus_data.unwrap());
+                self.data.write(qq.high(), self.state.bus_data.unwrap());
                 self.execute_m1()
             }
             _ => unreachable!(),
@@ -384,16 +379,16 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ldhl_sp_e(&mut self) -> Option<BusOp> {
-        match self.m_cycle {
+        match self.data.m_cycle {
             M2 => self.read_immediate(),
             M3 => {
                 let e = self.state.bus_data.unwrap();
-                let (l, flags) = alu::add(low_byte(self.regs.sp), e, false);
-                let (h, _) = alu::add(high_byte(self.regs.sp), sign_extension(e), flags.cy);
-                self.regs.h = h;
-                self.regs.l = l;
-                self.regs.f = flags;
-                self.regs.f.z = false;
+                let (l, flags) = alu::add(low_byte(self.data.sp), e, false);
+                let (h, _) = alu::add(high_byte(self.data.sp), sign_extension(e), flags.cy);
+                self.data.h = h;
+                self.data.l = l;
+                self.data.f = flags;
+                self.data.f.z = false;
                 None
             }
             M4 => self.execute_m1(),
@@ -402,7 +397,7 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ld_deref_nn_sp(&mut self) -> Option<BusOp> {
-        match self.m_cycle {
+        match self.data.m_cycle {
             M2 => self.read_immediate(),
             M3 => {
                 self.state.addr = self.state.bus_data.unwrap() as u16;
@@ -410,20 +405,20 @@ impl<'a> InstrExecution<'a> {
             }
             M4 => {
                 self.state.addr |= (self.state.bus_data.unwrap() as u16) << 8;
-                Some(BusOp::Write(self.state.addr, low_byte(self.regs.sp)))
+                Some(BusOp::Write(self.state.addr, low_byte(self.data.sp)))
             }
-            M5 => Some(BusOp::Write(self.state.addr + 1, high_byte(self.regs.sp))),
+            M5 => Some(BusOp::Write(self.state.addr + 1, high_byte(self.data.sp))),
             M6 => self.execute_m1(),
             _ => unreachable!(),
         }
     }
 
     fn alu_op_r(&mut self, op: AluOp, r: R) -> Option<BusOp> {
-        match self.m_cycle {
+        match self.data.m_cycle {
             M2 => {
-                let (result, flags) = self.alu_op(op, self.regs.a, self.regs.read(r));
-                self.regs.a = result;
-                self.regs.f = flags;
+                let (result, flags) = self.alu_op(op, self.data.a, self.data.read(r));
+                self.data.a = result;
+                self.data.f = flags;
                 self.execute_m1()
             }
             _ => unreachable!(),
@@ -431,12 +426,12 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn alu_op_n(&mut self, op: AluOp) -> Option<BusOp> {
-        match self.m_cycle {
+        match self.data.m_cycle {
             M2 => self.read_immediate(),
             M3 => {
-                let (result, flags) = self.alu_op(op, self.regs.a, self.state.bus_data.unwrap());
-                self.regs.a = result;
-                self.regs.f = flags;
+                let (result, flags) = self.alu_op(op, self.data.a, self.state.bus_data.unwrap());
+                self.data.a = result;
+                self.data.f = flags;
                 self.execute_m1()
             }
             _ => unreachable!(),
@@ -444,12 +439,12 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn alu_op_deref_hl(&mut self, op: AluOp) -> Option<BusOp> {
-        match self.m_cycle {
-            M2 => Some(BusOp::Read(self.regs.hl())),
+        match self.data.m_cycle {
+            M2 => Some(BusOp::Read(self.data.hl())),
             M3 => {
-                let (result, flags) = self.alu_op(op, self.regs.a, self.state.bus_data.unwrap());
-                self.regs.a = result;
-                self.regs.f = flags;
+                let (result, flags) = self.alu_op(op, self.data.a, self.state.bus_data.unwrap());
+                self.data.a = result;
+                self.data.f = flags;
                 self.execute_m1()
             }
             _ => unreachable!(),
@@ -457,13 +452,13 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn inc_r(&mut self, r: R) -> Option<BusOp> {
-        match self.m_cycle {
+        match self.data.m_cycle {
             M2 => {
-                let (result, flags) = alu::add(self.regs.read(r), 1, false);
-                self.regs.write(r, result);
-                self.regs.f.z = flags.z;
-                self.regs.f.n = flags.n;
-                self.regs.f.h = flags.h;
+                let (result, flags) = alu::add(self.data.read(r), 1, false);
+                self.data.write(r, result);
+                self.data.f.z = flags.z;
+                self.data.f.n = flags.n;
+                self.data.f.h = flags.h;
                 self.execute_m1()
             }
             _ => unreachable!(),
@@ -471,14 +466,14 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn inc_deref_hl(&mut self) -> Option<BusOp> {
-        match self.m_cycle {
-            M2 => Some(BusOp::Read(self.regs.hl())),
+        match self.data.m_cycle {
+            M2 => Some(BusOp::Read(self.data.hl())),
             M3 => {
                 let (result, flags) = alu::add(self.state.bus_data.unwrap(), 1, false);
-                self.regs.f.z = flags.z;
-                self.regs.f.n = flags.n;
-                self.regs.f.h = flags.h;
-                Some(BusOp::Write(self.regs.hl(), result))
+                self.data.f.z = flags.z;
+                self.data.f.n = flags.n;
+                self.data.f.h = flags.h;
+                Some(BusOp::Write(self.data.hl(), result))
             }
             M4 => self.execute_m1(),
             _ => unreachable!(),
@@ -486,14 +481,14 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn jp_nn(&mut self) -> Option<BusOp> {
-        match self.m_cycle {
+        match self.data.m_cycle {
             M2 => self.read_immediate(),
             M3 => {
                 self.state.data = self.state.bus_data.unwrap();
                 self.read_immediate()
             }
             M4 => {
-                self.regs.pc = u16::from_be_bytes([self.state.bus_data.unwrap(), self.state.data]);
+                self.data.pc = u16::from_be_bytes([self.state.bus_data.unwrap(), self.state.data]);
                 None
             }
             M5 => self.execute_m1(),
@@ -502,7 +497,7 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn jp_cc_nn(&mut self, cc: Cc) -> Option<BusOp> {
-        match self.m_cycle {
+        match self.data.m_cycle {
             M2 => self.read_immediate(),
             M3 => {
                 self.state.data = self.state.bus_data.unwrap();
@@ -510,7 +505,7 @@ impl<'a> InstrExecution<'a> {
             }
             M4 => {
                 if self.evaluate_condition(cc) {
-                    self.regs.pc =
+                    self.data.pc =
                         u16::from_be_bytes([self.state.bus_data.unwrap(), self.state.data]);
                     None
                 } else {
@@ -523,11 +518,11 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn jr_e(&mut self) -> Option<BusOp> {
-        match self.m_cycle {
+        match self.data.m_cycle {
             M2 => self.read_immediate(),
             M3 => {
                 let e = self.state.bus_data.unwrap() as i8;
-                self.regs.pc = self.regs.pc.wrapping_add(e as i16 as u16);
+                self.data.pc = self.data.pc.wrapping_add(e as i16 as u16);
                 None
             }
             M4 => self.execute_m1(),
@@ -536,9 +531,9 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn jp_deref_hl(&mut self) -> Option<BusOp> {
-        match self.m_cycle {
+        match self.data.m_cycle {
             M2 => {
-                self.regs.pc = self.regs.hl();
+                self.data.pc = self.data.hl();
                 self.execute_m1()
             }
             _ => unreachable!(),
@@ -546,14 +541,14 @@ impl<'a> InstrExecution<'a> {
     }
 
     fn ret(&mut self) -> Option<BusOp> {
-        match self.m_cycle {
+        match self.data.m_cycle {
             M2 => self.pop_byte(),
             M3 => {
                 self.state.data = self.state.bus_data.unwrap();
                 self.pop_byte()
             }
             M4 => {
-                self.regs.pc = u16::from_be_bytes([self.state.bus_data.unwrap(), self.state.data]);
+                self.data.pc = u16::from_be_bytes([self.state.bus_data.unwrap(), self.state.data]);
                 None
             }
             M5 => self.execute_m1(),
@@ -563,32 +558,32 @@ impl<'a> InstrExecution<'a> {
 
     fn execute_m1(&mut self) -> Option<BusOp> {
         self.state.m1 = true;
-        Some(BusOp::Read(self.regs.pc))
+        Some(BusOp::Read(self.data.pc))
     }
 
     fn read_immediate(&mut self) -> CpuOutput {
-        let pc = self.regs.pc;
-        self.regs.pc += 1;
+        let pc = self.data.pc;
+        self.data.pc += 1;
         Some(BusOp::Read(pc))
     }
 
     fn push_byte(&mut self, data: u8) -> CpuOutput {
-        self.regs.sp -= 1;
-        Some(BusOp::Write(self.regs.sp, data))
+        self.data.sp -= 1;
+        Some(BusOp::Write(self.data.sp, data))
     }
 
     fn pop_byte(&mut self) -> CpuOutput {
-        let sp = self.regs.sp;
-        self.regs.sp += 1;
+        let sp = self.data.sp;
+        self.data.sp += 1;
         Some(BusOp::Read(sp))
     }
 
     fn alu_op(&self, op: AluOp, lhs: u8, rhs: u8) -> (u8, Flags) {
         match op {
             AluOp::Add => alu::add(lhs, rhs, false),
-            AluOp::Adc => alu::add(lhs, rhs, self.regs.f.cy),
+            AluOp::Adc => alu::add(lhs, rhs, self.data.f.cy),
             AluOp::Sub => alu::sub(lhs, rhs, false),
-            AluOp::Sbc => alu::sub(lhs, rhs, self.regs.f.cy),
+            AluOp::Sbc => alu::sub(lhs, rhs, self.data.f.cy),
             AluOp::And => alu::and(lhs, rhs),
             AluOp::Xor => alu::xor(lhs, rhs),
             AluOp::Or => alu::or(lhs, rhs),
@@ -601,10 +596,10 @@ impl<'a> InstrExecution<'a> {
 
     fn evaluate_condition(&self, cc: Cc) -> bool {
         match cc {
-            Cc::Nz => !self.regs.f.z,
-            Cc::Z => self.regs.f.z,
-            Cc::Nc => !self.regs.f.cy,
-            Cc::C => self.regs.f.cy,
+            Cc::Nz => !self.data.f.z,
+            Cc::Z => self.data.f.z,
+            Cc::Nc => !self.data.f.cy,
+            Cc::C => self.data.f.cy,
         }
     }
 }

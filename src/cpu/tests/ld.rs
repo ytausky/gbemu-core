@@ -248,9 +248,9 @@ fn ld_l_l() {
 fn test_ld_r_r(dest: R, src: R) {
     let mut cpu = Cpu::default();
     let data = 0x42;
-    cpu.regs.write(src, data);
+    cpu.data.write(src, data);
     cpu.test_simple_instr(&encode_ld_r_r(dest, src), &[]);
-    assert_eq!(cpu.regs.read(dest), data)
+    assert_eq!(cpu.data.read(dest), data)
 }
 
 fn encode_ld_r_r(dest: R, src: R) -> Vec<u8> {
@@ -296,7 +296,7 @@ fn test_ld_r_n(r: R) {
     let mut cpu = Cpu::default();
     let n = 0x42;
     cpu.test_simple_instr(&encode_ld_r_n(r, n), &[]);
-    assert_eq!(cpu.regs.read(r), n)
+    assert_eq!(cpu.data.read(r), n)
 }
 
 fn encode_ld_r_n(r: R, n: u8) -> Vec<u8> {
@@ -341,8 +341,8 @@ fn ld_l_deref_hl() {
 fn test_ld_r_deref_hl(dest: R) {
     let mut cpu = Cpu::default();
     let data = 0x42;
-    cpu.regs.h = 0x12;
-    cpu.regs.l = 0x34;
+    cpu.data.h = 0x12;
+    cpu.data.l = 0x34;
     cpu.test_simple_instr(
         &encode_ld_r_deref_hl(dest),
         &[
@@ -350,7 +350,7 @@ fn test_ld_r_deref_hl(dest: R) {
             (Input::with_data(Some(data)), None),
         ],
     );
-    assert_eq!(cpu.regs.read(dest), data)
+    assert_eq!(cpu.data.read(dest), data)
 }
 
 fn encode_ld_r_deref_hl(dest: R) -> Vec<u8> {
@@ -395,15 +395,15 @@ fn ld_deref_hl_l() {
 fn test_ld_deref_hl_r(src: R) {
     let mut cpu = Cpu::default();
     let data = 0x42;
-    cpu.regs.h = 0x12;
-    cpu.regs.l = 0x34;
-    cpu.regs.write(src, data);
+    cpu.data.h = 0x12;
+    cpu.data.l = 0x34;
+    cpu.data.write(src, data);
     cpu.test_simple_instr(
         &encode_ld_deref_hl_r(src),
         &[
             (
                 Input::with_data(None),
-                Some(BusOp::Write(cpu.regs.hl(), data)),
+                Some(BusOp::Write(cpu.data.hl(), data)),
             ),
             (Input::with_data(None), None),
         ],
@@ -417,8 +417,8 @@ fn encode_ld_deref_hl_r(src: R) -> Vec<u8> {
 #[test]
 fn ld_deref_hl_n() {
     let mut cpu = Cpu::default();
-    cpu.regs.h = 0x12;
-    cpu.regs.l = 0x34;
+    cpu.data.h = 0x12;
+    cpu.data.l = 0x34;
     let n = 0x42;
     cpu.test_simple_instr(
         &encode_ld_deref_hl_n(n),
@@ -436,8 +436,8 @@ fn encode_ld_deref_hl_n(n: u8) -> Vec<u8> {
 #[test]
 fn ld_a_deref_bc() {
     let mut cpu = Cpu::default();
-    cpu.regs.b = 0x12;
-    cpu.regs.c = 0x34;
+    cpu.data.b = 0x12;
+    cpu.data.c = 0x34;
     let value = 0x42;
     cpu.test_simple_instr(
         &[0b00_001_010],
@@ -446,14 +446,14 @@ fn ld_a_deref_bc() {
             (Input::with_data(Some(value)), None),
         ],
     );
-    assert_eq!(cpu.regs.a, value)
+    assert_eq!(cpu.data.a, value)
 }
 
 #[test]
 fn ld_a_deref_de() {
     let mut cpu = Cpu::default();
-    cpu.regs.d = 0x12;
-    cpu.regs.e = 0x34;
+    cpu.data.d = 0x12;
+    cpu.data.e = 0x34;
     let value = 0x5f;
     cpu.test_simple_instr(
         &[0b00_011_010],
@@ -462,13 +462,13 @@ fn ld_a_deref_de() {
             (Input::with_data(Some(value)), None),
         ],
     );
-    assert_eq!(cpu.regs.a, value)
+    assert_eq!(cpu.data.a, value)
 }
 
 #[test]
 fn ld_a_deref_c() {
     let mut cpu = Cpu::default();
-    cpu.regs.c = 0x95;
+    cpu.data.c = 0x95;
     let value = 0x42;
     cpu.test_simple_instr(
         &[0b11_110_010],
@@ -477,15 +477,15 @@ fn ld_a_deref_c() {
             (Input::with_data(Some(value)), None),
         ],
     );
-    assert_eq!(cpu.regs.a, value)
+    assert_eq!(cpu.data.a, value)
 }
 
 #[test]
 fn ld_deref_c_a() {
     let mut cpu = Cpu::default();
     let value = 0x42;
-    cpu.regs.a = value;
-    cpu.regs.c = 0x9f;
+    cpu.data.a = value;
+    cpu.data.c = 0x9f;
     cpu.test_simple_instr(
         &[0b11_100_010],
         &[
@@ -506,14 +506,14 @@ fn ld_a_deref_n() {
             (Input::with_data(Some(value)), None),
         ],
     );
-    assert_eq!(cpu.regs.a, value)
+    assert_eq!(cpu.data.a, value)
 }
 
 #[test]
 fn ld_deref_n_a() {
     let mut cpu = Cpu::default();
     let value = 0x42;
-    cpu.regs.a = value;
+    cpu.data.a = value;
     cpu.test_simple_instr(
         &[0b11_100_000, 0x34],
         &[
@@ -534,14 +534,14 @@ fn ld_a_deref_nn() {
             (Input::with_data(Some(value)), None),
         ],
     );
-    assert_eq!(cpu.regs.a, value)
+    assert_eq!(cpu.data.a, value)
 }
 
 #[test]
 fn ld_deref_nn_a() {
     let mut cpu = Cpu::default();
     let value = 0x42;
-    cpu.regs.a = value;
+    cpu.data.a = value;
     cpu.test_simple_instr(
         &[0b11_101_010, 0x00, 0x80],
         &[
@@ -554,8 +554,8 @@ fn ld_deref_nn_a() {
 #[test]
 fn ld_a_deref_hli() {
     let mut cpu = Cpu::default();
-    cpu.regs.h = 0x01;
-    cpu.regs.l = 0xff;
+    cpu.data.h = 0x01;
+    cpu.data.l = 0xff;
     let value = 0x56;
     cpu.test_simple_instr(
         &[0b00_101_010],
@@ -564,15 +564,15 @@ fn ld_a_deref_hli() {
             (Input::with_data(Some(value)), None),
         ],
     );
-    assert_eq!(cpu.regs.a, value);
-    assert_eq!(cpu.regs.hl(), 0x0200)
+    assert_eq!(cpu.data.a, value);
+    assert_eq!(cpu.data.hl(), 0x0200)
 }
 
 #[test]
 fn ld_a_deref_hld() {
     let mut cpu = Cpu::default();
-    cpu.regs.h = 0x8a;
-    cpu.regs.l = 0x5c;
+    cpu.data.h = 0x8a;
+    cpu.data.l = 0x5c;
     let value = 0x3c;
     cpu.test_simple_instr(
         &[0b00_111_010],
@@ -581,16 +581,16 @@ fn ld_a_deref_hld() {
             (Input::with_data(Some(value)), None),
         ],
     );
-    assert_eq!(cpu.regs.a, value);
-    assert_eq!(cpu.regs.hl(), 0x8a5b)
+    assert_eq!(cpu.data.a, value);
+    assert_eq!(cpu.data.hl(), 0x8a5b)
 }
 
 #[test]
 fn ld_deref_bc_a() {
     let mut cpu = Cpu::default();
-    cpu.regs.a = 0x3f;
-    cpu.regs.b = 0x02;
-    cpu.regs.c = 0x05;
+    cpu.data.a = 0x3f;
+    cpu.data.b = 0x02;
+    cpu.data.c = 0x05;
     cpu.test_simple_instr(
         &[0b00_000_010],
         &[
@@ -603,8 +603,8 @@ fn ld_deref_bc_a() {
 #[test]
 fn ld_deref_de_a() {
     let mut cpu = Cpu::default();
-    cpu.regs.d = 0x02;
-    cpu.regs.e = 0x05;
+    cpu.data.d = 0x02;
+    cpu.data.e = 0x05;
     cpu.test_simple_instr(
         &[0b00_010_010],
         &[
@@ -617,9 +617,9 @@ fn ld_deref_de_a() {
 #[test]
 fn ld_deref_hli_a() {
     let mut cpu = Cpu::default();
-    cpu.regs.a = 0x56;
-    cpu.regs.h = 0xff;
-    cpu.regs.l = 0xff;
+    cpu.data.a = 0x56;
+    cpu.data.h = 0xff;
+    cpu.data.l = 0xff;
     cpu.test_simple_instr(
         &[0b00_100_010],
         &[
@@ -627,15 +627,15 @@ fn ld_deref_hli_a() {
             (Input::with_data(None), None),
         ],
     );
-    assert_eq!(cpu.regs.hl(), 0x0000)
+    assert_eq!(cpu.data.hl(), 0x0000)
 }
 
 #[test]
 fn ld_deref_hld_a() {
     let mut cpu = Cpu::default();
-    cpu.regs.a = 0x05;
-    cpu.regs.h = 0x40;
-    cpu.regs.l = 0x00;
+    cpu.data.a = 0x05;
+    cpu.data.h = 0x40;
+    cpu.data.l = 0x00;
     cpu.test_simple_instr(
         &[0b00_110_010],
         &[
@@ -643,35 +643,35 @@ fn ld_deref_hld_a() {
             (Input::with_data(None), None),
         ],
     );
-    assert_eq!(cpu.regs.hl(), 0x3fff)
+    assert_eq!(cpu.data.hl(), 0x3fff)
 }
 
 #[test]
 fn ld_bc_nn() {
     let mut cpu = Cpu::default();
     cpu.test_simple_instr(&encode_ld_dd_nn(Dd::Bc, 0x3a5b), &[]);
-    assert_eq!(cpu.regs.bc(), 0x3a5b)
+    assert_eq!(cpu.data.bc(), 0x3a5b)
 }
 
 #[test]
 fn ld_de_nn() {
     let mut cpu = Cpu::default();
     cpu.test_simple_instr(&encode_ld_dd_nn(Dd::De, 0x3a5b), &[]);
-    assert_eq!(cpu.regs.de(), 0x3a5b)
+    assert_eq!(cpu.data.de(), 0x3a5b)
 }
 
 #[test]
 fn ld_hl_nn() {
     let mut cpu = Cpu::default();
     cpu.test_simple_instr(&encode_ld_dd_nn(Dd::Hl, 0x3a5b), &[]);
-    assert_eq!(cpu.regs.hl(), 0x3a5b)
+    assert_eq!(cpu.data.hl(), 0x3a5b)
 }
 
 #[test]
 fn ld_sp_nn() {
     let mut cpu = Cpu::default();
     cpu.test_simple_instr(&encode_ld_dd_nn(Dd::Sp, 0x3a5b), &[]);
-    assert_eq!(cpu.regs.sp, 0x3a5b)
+    assert_eq!(cpu.data.sp, 0x3a5b)
 }
 
 fn encode_ld_dd_nn(dd: Dd, nn: u16) -> Vec<u8> {
@@ -685,8 +685,8 @@ fn encode_ld_dd_nn(dd: Dd, nn: u16) -> Vec<u8> {
 #[test]
 fn ld_sp_hl() {
     let mut cpu = Cpu::default();
-    cpu.regs.h = 0x12;
-    cpu.regs.l = 0x34;
+    cpu.data.h = 0x12;
+    cpu.data.l = 0x34;
     cpu.test_simple_instr(
         &[0b11_111_001],
         &[
@@ -694,7 +694,7 @@ fn ld_sp_hl() {
             (Input::with_data(None), None),
         ],
     );
-    assert_eq!(cpu.regs.sp, 0x1234)
+    assert_eq!(cpu.data.sp, 0x1234)
 }
 
 #[test]
@@ -719,9 +719,9 @@ fn push_af() {
 
 fn test_push_qq(qq: Qq) {
     let mut cpu = Cpu::default();
-    cpu.regs.write(qq.high(), 0x12);
-    cpu.regs.write(qq.low(), 0x34);
-    cpu.regs.sp = 0xfffe;
+    cpu.data.write(qq.high(), 0x12);
+    cpu.data.write(qq.low(), 0x34);
+    cpu.data.sp = 0xfffe;
     cpu.test_simple_instr(
         &encode_push_qq(qq),
         &[
@@ -729,17 +729,17 @@ fn test_push_qq(qq: Qq) {
             (Input::with_data(None), None),
             (
                 Input::with_data(None),
-                Some(BusOp::Write(0xfffd, cpu.regs.read(qq.high()))),
+                Some(BusOp::Write(0xfffd, cpu.data.read(qq.high()))),
             ),
             (Input::with_data(None), None),
             (
                 Input::with_data(None),
-                Some(BusOp::Write(0xfffc, cpu.regs.read(qq.low()))),
+                Some(BusOp::Write(0xfffc, cpu.data.read(qq.low()))),
             ),
             (Input::with_data(None), None),
         ],
     );
-    assert_eq!(cpu.regs.sp, 0xfffc)
+    assert_eq!(cpu.data.sp, 0xfffc)
 }
 
 fn encode_push_qq(qq: Qq) -> Vec<u8> {
@@ -768,7 +768,7 @@ fn pop_af() {
 
 fn test_pop_qq(qq: Qq) {
     let mut cpu = Cpu::default();
-    cpu.regs.sp = 0xfffc;
+    cpu.data.sp = 0xfffc;
     cpu.test_simple_instr(
         &encode_pop_qq(qq),
         &[
@@ -778,9 +778,9 @@ fn test_pop_qq(qq: Qq) {
             (Input::with_data(Some(0x3c)), None),
         ],
     );
-    assert_eq!(cpu.regs.read(qq.high()), 0x3c);
-    assert_eq!(cpu.regs.read(qq.low()), 0x50);
-    assert_eq!(cpu.regs.sp, 0xfffe)
+    assert_eq!(cpu.data.read(qq.high()), 0x3c);
+    assert_eq!(cpu.data.read(qq.low()), 0x50);
+    assert_eq!(cpu.data.sp, 0xfffe)
 }
 
 fn encode_pop_qq(qq: Qq) -> Vec<u8> {
@@ -790,7 +790,7 @@ fn encode_pop_qq(qq: Qq) -> Vec<u8> {
 #[test]
 fn ldhl_sp_e() {
     let mut cpu = Cpu::default();
-    cpu.regs.sp = 0xfff8;
+    cpu.data.sp = 0xfff8;
     cpu.test_simple_instr(
         &encode_ldhl_sp_e(0x02),
         &[
@@ -798,8 +798,8 @@ fn ldhl_sp_e() {
             (Input::with_data(None), None),
         ],
     );
-    assert_eq!(cpu.regs.hl(), 0xfffa);
-    assert_eq!(cpu.regs.f, flags!())
+    assert_eq!(cpu.data.hl(), 0xfffa);
+    assert_eq!(cpu.data.f, flags!())
 }
 
 #[test]
@@ -812,14 +812,14 @@ fn ldhl_sp_e_with_negative_e() {
             (Input::with_data(None), None),
         ],
     );
-    assert_eq!(cpu.regs.hl(), 0xffff);
-    assert_eq!(cpu.regs.f, flags!())
+    assert_eq!(cpu.data.hl(), 0xffff);
+    assert_eq!(cpu.data.f, flags!())
 }
 
 #[test]
 fn ldhl_sp_e_does_not_set_z() {
     let mut cpu = Cpu::default();
-    cpu.regs.sp = 0xffff;
+    cpu.data.sp = 0xffff;
     cpu.test_simple_instr(
         &encode_ldhl_sp_e(0x01),
         &[
@@ -827,14 +827,14 @@ fn ldhl_sp_e_does_not_set_z() {
             (Input::with_data(None), None),
         ],
     );
-    assert_eq!(cpu.regs.hl(), 0x0000);
-    assert_eq!(cpu.regs.f, flags!(h, cy))
+    assert_eq!(cpu.data.hl(), 0x0000);
+    assert_eq!(cpu.data.f, flags!(h, cy))
 }
 
 #[test]
 fn ldhl_sp_e_sets_h() {
     let mut cpu = Cpu::default();
-    cpu.regs.sp = 0xffe8;
+    cpu.data.sp = 0xffe8;
     cpu.test_simple_instr(
         &encode_ldhl_sp_e(0x09),
         &[
@@ -842,14 +842,14 @@ fn ldhl_sp_e_sets_h() {
             (Input::with_data(None), None),
         ],
     );
-    assert_eq!(cpu.regs.hl(), 0xfff1);
-    assert_eq!(cpu.regs.f, flags!(h))
+    assert_eq!(cpu.data.hl(), 0xfff1);
+    assert_eq!(cpu.data.f, flags!(h))
 }
 
 #[test]
 fn ldhl_sp_e_sets_cy() {
     let mut cpu = Cpu::default();
-    cpu.regs.sp = 0xfef1;
+    cpu.data.sp = 0xfef1;
     cpu.test_simple_instr(
         &encode_ldhl_sp_e(0x10),
         &[
@@ -857,8 +857,8 @@ fn ldhl_sp_e_sets_cy() {
             (Input::with_data(None), None),
         ],
     );
-    assert_eq!(cpu.regs.hl(), 0xff01);
-    assert_eq!(cpu.regs.f, flags!(cy))
+    assert_eq!(cpu.data.hl(), 0xff01);
+    assert_eq!(cpu.data.f, flags!(cy))
 }
 
 fn encode_ldhl_sp_e(e: i8) -> Vec<u8> {
@@ -868,18 +868,18 @@ fn encode_ldhl_sp_e(e: i8) -> Vec<u8> {
 #[test]
 fn ld_deref_nn_sp() {
     let mut cpu = Cpu::default();
-    cpu.regs.sp = 0xfff8;
+    cpu.data.sp = 0xfff8;
     cpu.test_simple_instr(
         &encode_ld_deref_nn_sp(0xc100),
         &[
             (
                 Input::with_data(None),
-                Some(BusOp::Write(0xc100, low_byte(cpu.regs.sp))),
+                Some(BusOp::Write(0xc100, low_byte(cpu.data.sp))),
             ),
             (Input::with_data(None), None),
             (
                 Input::with_data(None),
-                Some(BusOp::Write(0xc101, high_byte(cpu.regs.sp))),
+                Some(BusOp::Write(0xc101, high_byte(cpu.data.sp))),
             ),
             (Input::with_data(None), None),
         ],
