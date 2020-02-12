@@ -1,19 +1,10 @@
 use super::*;
 
-pub(super) struct RunModeCpu<'a> {
-    pub data: &'a mut Data,
-    pub state: &'a mut InstructionExecutionState,
-}
-
-impl<'a> RunModeCpu<'a> {
-    pub fn step(&mut self, input: &Input) -> (Option<ModeTransition>, CpuOutput) {
+impl<'a> View<'a, InstructionExecutionState> {
+    pub(super) fn step(&mut self, input: &Input) -> (Option<ModeTransition>, CpuOutput) {
         match self.data.phase {
             Tick => {
-                let output = InstrExecution {
-                    data: self.data,
-                    state: self.state,
-                }
-                .exec_instr();
+                let output = self.exec_instr();
                 (None, output)
             }
             Tock => {
@@ -32,15 +23,8 @@ impl<'a> RunModeCpu<'a> {
             }
         }
     }
-}
 
-struct InstrExecution<'a> {
-    data: &'a mut Data,
-    state: &'a mut InstructionExecutionState,
-}
-
-impl<'a> InstrExecution<'a> {
-    fn exec_instr(mut self) -> CpuOutput {
+    fn exec_instr(&mut self) -> CpuOutput {
         match self.state.opcode.split() {
             (0b00, 0b000, 0b000) => self.nop(),
             (0b00, dest, 0b001) if dest & 0b001 == 0 => self.ld_dd_nn((dest >> 1).into()),

@@ -1,4 +1,3 @@
-use self::instruction::RunModeCpu;
 use self::{MCycle::*, Phase::*};
 
 use std::ops::{BitAnd, BitOr, Not};
@@ -31,6 +30,7 @@ pub struct Cpu {
 
 #[derive(Default)]
 pub struct Data {
+    // ISA registers
     pub a: u8,
     pub f: Flags,
     pub b: u8,
@@ -41,8 +41,10 @@ pub struct Data {
     pub l: u8,
     pub pc: u16,
     pub sp: u16,
+
     pub ie: u8,
     pub ime: bool,
+
     m_cycle: MCycle,
     phase: Phase,
 }
@@ -57,7 +59,7 @@ pub struct Flags {
 
 enum State {
     Instruction(InstructionExecutionState),
-    Interrupt,
+    Interrupt(InterruptDispatchState),
 }
 
 struct InstructionExecutionState {
@@ -66,6 +68,13 @@ struct InstructionExecutionState {
     m1: bool,
     data: u8,
     addr: u16,
+}
+
+struct InterruptDispatchState;
+
+struct View<'a, T> {
+    data: &'a mut Data,
+    state: &'a mut T,
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -244,13 +253,14 @@ impl Default for InstructionExecutionState {
 impl Cpu {
     pub fn step(&mut self, input: &Input) -> CpuOutput {
         let (mode_transition, output) = match &mut self.state {
-            State::Instruction(state) => RunModeCpu {
+            State::Instruction(state) => View {
                 data: &mut self.data,
                 state,
             }
             .step(input),
-            State::Interrupt => InterruptModeCpu {
+            State::Interrupt(state) => View {
                 data: &mut self.data,
+                state,
             }
             .step(input),
         };
@@ -285,16 +295,12 @@ impl From<ModeTransition> for State {
                 data: 0xff,
                 addr: 0xffff,
             }),
-            ModeTransition::Interrupt => State::Interrupt,
+            ModeTransition::Interrupt => State::Interrupt(InterruptDispatchState),
         }
     }
 }
 
-struct InterruptModeCpu<'a> {
-    data: &'a mut Data,
-}
-
-impl<'a> InterruptModeCpu<'a> {
+impl<'a> View<'a, InterruptDispatchState> {
     fn step(&mut self, input: &Input) -> (Option<ModeTransition>, CpuOutput) {
         match self.data.m_cycle {
             M2 => (None, None),
