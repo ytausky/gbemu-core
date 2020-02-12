@@ -63,7 +63,7 @@ enum State {
 }
 
 struct InstructionExecutionState {
-    opcode: Opcode,
+    opcode: u8,
     bus_data: Option<u8>,
     m1: bool,
     data: u8,
@@ -191,15 +191,6 @@ impl From<u8> for AluOp {
     }
 }
 
-#[derive(Clone, Copy)]
-struct Opcode(u8);
-
-impl Opcode {
-    fn split(self) -> (u8, u8, u8) {
-        (self.0 >> 6, (self.0 >> 3) & 0b111, self.0 & 0b111)
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum MCycle {
     M2,
@@ -241,7 +232,7 @@ impl Default for Cpu {
 impl Default for InstructionExecutionState {
     fn default() -> Self {
         InstructionExecutionState {
-            opcode: Opcode(0x00),
+            opcode: 0x00,
             bus_data: None,
             m1: false,
             data: 0xff,
@@ -281,7 +272,7 @@ impl Cpu {
 
 #[derive(Clone, Copy)]
 enum ModeTransition {
-    Instruction(Opcode),
+    Instruction(u8),
     Interrupt,
 }
 
@@ -327,7 +318,7 @@ impl<'a> View<'a, InterruptDispatchState> {
                     self.data.ime = false;
                     let n = input.r#if.trailing_zeros();
                     self.data.pc = 0x0040 + 8 * n as u16;
-                    (Some(ModeTransition::Instruction(Opcode(0x00))), None)
+                    (Some(ModeTransition::Instruction(0x00)), None)
                 }
             },
             _ => unreachable!(),

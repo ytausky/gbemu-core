@@ -1,5 +1,9 @@
 use super::*;
 
+fn split_opcode(opcode: u8) -> (u8, u8, u8) {
+    (opcode >> 6, (opcode >> 3) & 0b111, opcode & 0b111)
+}
+
 impl<'a> View<'a, InstructionExecutionState> {
     pub(super) fn step(&mut self, input: &Input) -> (Option<ModeTransition>, CpuOutput) {
         match self.data.phase {
@@ -14,7 +18,7 @@ impl<'a> View<'a, InstructionExecutionState> {
                         ModeTransition::Interrupt
                     } else {
                         self.data.pc += 1;
-                        ModeTransition::Instruction(Opcode(self.state.bus_data.unwrap()))
+                        ModeTransition::Instruction(self.state.bus_data.unwrap())
                     })
                 } else {
                     None
@@ -25,7 +29,7 @@ impl<'a> View<'a, InstructionExecutionState> {
     }
 
     fn exec_instr(&mut self) -> CpuOutput {
-        match self.state.opcode.split() {
+        match split_opcode(self.state.opcode) {
             (0b00, 0b000, 0b000) => self.nop(),
             (0b00, dest, 0b001) if dest & 0b001 == 0 => self.ld_dd_nn((dest >> 1).into()),
             (0b00, 0b000, 0b010) => self.ld_deref_bc_a(),
