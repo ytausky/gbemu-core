@@ -290,7 +290,7 @@ impl<'a> RunModeCpu<'a> {
             Tock => {
                 self.state.bus_data = input.data;
                 let transition = if self.state.m1 {
-                    Some(if input.interrupt_flags & *self.ie != 0x00 {
+                    Some(if input.r#if & *self.ie != 0x00 {
                         ModeTransition::Interrupt
                     } else {
                         self.regs.pc += 1;
@@ -906,7 +906,7 @@ impl<'a> InterruptModeCpu<'a> {
                     )
                 }
                 Tock => {
-                    let n = input.interrupt_flags.trailing_zeros();
+                    let n = input.r#if.trailing_zeros();
                     self.regs.pc = 0x0040 + 8 * n as u16;
                     (Some(ModeTransition::Instruction(Opcode(0x00))), None)
                 }
@@ -941,7 +941,7 @@ struct AluOutput {
 #[derive(Clone)]
 pub struct Input {
     data: Option<u8>,
-    interrupt_flags: u8,
+    r#if: u8,
 }
 
 #[derive(Clone, Copy, PartialEq)]

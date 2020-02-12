@@ -103,32 +103,26 @@ fn dispatch_interrupt_0() {
 #[test]
 fn disabled_interrupt_0_does_not_cause_interrupt_dispatch() {
     let mut cpu = Cpu::default();
-    let interrupt_flags = 0x01;
+    let r#if = 0x01;
     assert_eq!(
-        cpu.step(&Input {
-            data: None,
-            interrupt_flags,
-        }),
+        cpu.step(&Input { data: None, r#if }),
         Some(BusOp::Read(0x0000))
     );
     assert_eq!(
         cpu.step(&Input {
             data: Some(0x00),
-            interrupt_flags
+            r#if
         }),
         None
     );
     assert_eq!(
-        cpu.step(&Input {
-            data: None,
-            interrupt_flags,
-        }),
+        cpu.step(&Input { data: None, r#if }),
         Some(BusOp::Read(0x0001))
     );
     assert_eq!(
         cpu.step(&Input {
             data: Some(0x00),
-            interrupt_flags
+            r#if
         }),
         None
     );
@@ -182,16 +176,13 @@ impl Cpu {
     fn test_interrupt_dispatch(&mut self, n: u16) {
         let pc = self.regs.pc;
         let sp = self.regs.sp;
-        let interrupt_flags = 0x01 << n;
-        let input = Input {
-            data: None,
-            interrupt_flags,
-        };
+        let r#if = 0x01 << n;
+        let input = Input { data: None, r#if };
         assert_eq!(self.step(&input), Some(BusOp::Read(pc)));
         assert_eq!(
             self.step(&Input {
                 data: Some(0x00),
-                interrupt_flags
+                r#if
             }),
             None
         );
@@ -213,9 +204,6 @@ impl Cpu {
 
 impl Input {
     fn with_data(data: Option<u8>) -> Self {
-        Self {
-            data,
-            interrupt_flags: 0x00,
-        }
+        Self { data, r#if: 0x00 }
     }
 }
