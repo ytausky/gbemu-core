@@ -24,6 +24,7 @@ mod tests;
 
 pub struct Cpu {
     pub regs: Regs,
+    pub ie: u8,
     mode: Mode,
     m_cycle: MCycle,
     phase: Phase,
@@ -192,6 +193,7 @@ impl Default for Cpu {
     fn default() -> Self {
         Self {
             regs: Default::default(),
+            ie: 0x00,
             mode: Mode::Instruction(Default::default()),
             m_cycle: M2,
             phase: Tick,
@@ -216,6 +218,7 @@ impl Cpu {
         let (mode_transition, output) = match &mut self.mode {
             Mode::Instruction(state) => RunModeCpu {
                 regs: &mut self.regs,
+                ie: &mut self.ie,
                 state,
                 m_cycle: self.m_cycle,
                 phase: self.phase,
@@ -266,6 +269,7 @@ impl From<ModeTransition> for Mode {
 
 struct RunModeCpu<'a> {
     regs: &'a mut Regs,
+    ie: &'a mut u8,
     state: &'a mut InstructionExecutionState,
     m_cycle: MCycle,
     phase: Phase,
@@ -286,7 +290,7 @@ impl<'a> RunModeCpu<'a> {
             Tock => {
                 self.state.bus_data = input.data;
                 let transition = if self.state.m1 {
-                    Some(if input.interrupt_flags != 0x00 {
+                    Some(if input.interrupt_flags & *self.ie != 0x00 {
                         ModeTransition::Interrupt
                     } else {
                         self.regs.pc += 1;

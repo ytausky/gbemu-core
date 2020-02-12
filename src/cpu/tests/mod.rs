@@ -96,7 +96,42 @@ fn dispatch_interrupt_0() {
     let mut cpu = Cpu::default();
     cpu.regs.pc = 0x3000;
     cpu.regs.sp = 0x2000;
+    cpu.ie = 0x01;
     cpu.test_interrupt_dispatch(0x0000)
+}
+
+#[test]
+fn disabled_interrupt_0_does_not_cause_interrupt_dispatch() {
+    let mut cpu = Cpu::default();
+    let interrupt_flags = 0x01;
+    assert_eq!(
+        cpu.step(&Input {
+            data: None,
+            interrupt_flags,
+        }),
+        Some(BusOp::Read(0x0000))
+    );
+    assert_eq!(
+        cpu.step(&Input {
+            data: Some(0x00),
+            interrupt_flags
+        }),
+        None
+    );
+    assert_eq!(
+        cpu.step(&Input {
+            data: None,
+            interrupt_flags,
+        }),
+        Some(BusOp::Read(0x0001))
+    );
+    assert_eq!(
+        cpu.step(&Input {
+            data: Some(0x00),
+            interrupt_flags
+        }),
+        None
+    );
 }
 
 #[test]
@@ -104,6 +139,7 @@ fn dispatch_interrupt_1() {
     let mut cpu = Cpu::default();
     cpu.regs.pc = 0x3000;
     cpu.regs.sp = 0x2000;
+    cpu.ie = 0x02;
     cpu.test_interrupt_dispatch(0x0001)
 }
 
