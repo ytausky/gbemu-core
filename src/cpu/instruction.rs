@@ -371,8 +371,8 @@ impl<'a> View<'a, InstructionExecutionState> {
             M2 => self.read_immediate(),
             M3 => {
                 let e = self.state.bus_data.unwrap();
-                let (l, flags) = alu::add(low_byte(self.data.sp), e, false);
-                let (h, _) = alu::add(high_byte(self.data.sp), sign_extension(e), flags.cy);
+                let (l, flags) = add(low_byte(self.data.sp), e, false);
+                let (h, _) = add(high_byte(self.data.sp), sign_extension(e), flags.cy);
                 self.data.h = h;
                 self.data.l = l;
                 self.data.f = flags;
@@ -442,7 +442,7 @@ impl<'a> View<'a, InstructionExecutionState> {
     fn inc_r(&mut self, r: R) -> Option<BusOp> {
         match self.data.m_cycle {
             M2 => {
-                let (result, flags) = alu::add(self.data.read(r), 1, false);
+                let (result, flags) = add(self.data.read(r), 1, false);
                 self.data.write(r, result);
                 self.data.f.z = flags.z;
                 self.data.f.n = flags.n;
@@ -457,7 +457,7 @@ impl<'a> View<'a, InstructionExecutionState> {
         match self.data.m_cycle {
             M2 => Some(BusOp::Read(self.data.hl())),
             M3 => {
-                let (result, flags) = alu::add(self.state.bus_data.unwrap(), 1, false);
+                let (result, flags) = add(self.state.bus_data.unwrap(), 1, false);
                 self.data.f.z = flags.z;
                 self.data.f.n = flags.n;
                 self.data.f.h = flags.h;
@@ -568,15 +568,15 @@ impl<'a> View<'a, InstructionExecutionState> {
 
     fn alu_op(&self, op: AluOp, lhs: u8, rhs: u8) -> (u8, Flags) {
         match op {
-            AluOp::Add => alu::add(lhs, rhs, false),
-            AluOp::Adc => alu::add(lhs, rhs, self.data.f.cy),
-            AluOp::Sub => alu::sub(lhs, rhs, false),
-            AluOp::Sbc => alu::sub(lhs, rhs, self.data.f.cy),
-            AluOp::And => alu::and(lhs, rhs),
-            AluOp::Xor => alu::xor(lhs, rhs),
-            AluOp::Or => alu::or(lhs, rhs),
+            AluOp::Add => add(lhs, rhs, false),
+            AluOp::Adc => add(lhs, rhs, self.data.f.cy),
+            AluOp::Sub => sub(lhs, rhs, false),
+            AluOp::Sbc => sub(lhs, rhs, self.data.f.cy),
+            AluOp::And => and(lhs, rhs),
+            AluOp::Xor => xor(lhs, rhs),
+            AluOp::Or => or(lhs, rhs),
             AluOp::Cp => {
-                let (_, flags) = alu::sub(lhs, rhs, false);
+                let (_, flags) = sub(lhs, rhs, false);
                 (lhs, flags)
             }
         }
@@ -589,5 +589,118 @@ impl<'a> View<'a, InstructionExecutionState> {
             Cc::Nc => !self.data.f.cy,
             Cc::C => self.data.f.cy,
         }
+    }
+}
+
+fn add(lhs: u8, rhs: u8, carry_in: bool) -> (u8, Flags) {
+    let (partial, overflow1) = lhs.overflowing_add(rhs);
+    let (result, overflow2) = partial.overflowing_add(carry_in.into());
+    (
+        result,
+        Flags {
+            z: result == 0,
+            n: false,
+            h: (lhs & 0x0f) + (rhs & 0x0f) + u8::from(carry_in) > 0x0f,
+            cy: overflow1 | overflow2,
+        },
+    )
+}
+
+fn sub(lhs: u8, rhs: u8, carry_in: bool) -> (u8, Flags) {
+    let carry_in = u8::from(carry_in);
+    let (partial, overflow1) = lhs.overflowing_sub(rhs);
+    let (result, overflow2) = partial.overflowing_sub(carry_in);
+    (
+        result,
+        Flags {
+            z: result == 0,
+            n: true,
+            h: (lhs & 0x0f).wrapping_sub(rhs & 0x0f).wrapping_sub(carry_in) > 0x0f,
+            cy: overflow1 | overflow2,
+        },
+    )
+}
+
+fn and(lhs: u8, rhs: u8) -> (u8, Flags) {
+    let result = lhs & rhs;
+    (
+        result,
+        Flags {
+            z: result == 0,
+            h: true,
+            ..Default::default()
+        },
+    )
+}
+
+fn xor(lhs: u8, rhs: u8) -> (u8, Flags) {
+    let result = lhs ^ rhs;
+    (
+        result,
+        Flags {
+            z: result == 0,
+            ..Default::default()
+        },
+    )
+}
+
+fn or(lhs: u8, rhs: u8) -> (u8, Flags) {
+    let result = lhs | rhs;
+    (
+        result,
+        Flags {
+            z: result == 0,
+            ..Default::default()
+        },
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn addition() {
+        assert_eq!(add(0x12, 0x34, false), (0x46, flags!()))
+    }
+
+    #[test]
+    fn addition_sets_h() {
+        assert_eq!(add(0x08, 0x08, false), (0x10, flags!(h)))
+    }
+
+    #[test]
+    fn addition_is_wrapping() {
+        assert_eq!(add(0x80, 0x80, false), (0x00, flags!(z, cy)))
+    }
+
+    #[test]
+    fn addition_with_carry_in() {
+        assert_eq!(add(0xff, 0x00, true), (0x00, flags!(z, h, cy)))
+    }
+
+    #[test]
+    fn subtraction_sets_n() {
+        assert_eq!(sub(0x34, 0x12, false), (0x22, flags!(n)))
+    }
+
+    #[test]
+    fn subtraction_sets_h() {
+        assert_eq!(sub(0x10, 0x01, false), (0x0f, flags!(n, h)))
+    }
+
+    #[test]
+    fn subtraction_is_wrapping() {
+        assert_eq!(sub(0x00, 0x01, false), (0xff, flags!(n, h, cy)))
+    }
+
+    #[test]
+    fn subtraction_with_carry_in() {
+        assert_eq!(sub(0x00, 0x00, true), (0xff, flags!(n, h, cy)))
+    }
+
+    #[test]
+    fn subtraction_sets_z() {
+        assert_eq!(sub(0x07, 0x07, false), (0x00, flags!(z, n)))
     }
 }

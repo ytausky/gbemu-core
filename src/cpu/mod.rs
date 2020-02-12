@@ -17,7 +17,6 @@ macro_rules! flags {
     };
 }
 
-mod alu;
 mod instruction;
 mod interrupt;
 
