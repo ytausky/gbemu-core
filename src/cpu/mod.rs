@@ -25,6 +25,7 @@ mod tests;
 pub struct Cpu {
     pub regs: Regs,
     pub ie: u8,
+    pub ime: bool,
     mode: Mode,
     m_cycle: MCycle,
     phase: Phase,
@@ -194,6 +195,7 @@ impl Default for Cpu {
         Self {
             regs: Default::default(),
             ie: 0x00,
+            ime: false,
             mode: Mode::Instruction(Default::default()),
             m_cycle: M2,
             phase: Tick,
@@ -226,6 +228,7 @@ impl Cpu {
             .step(input),
             Mode::Interrupt => InterruptModeCpu {
                 regs: &mut self.regs,
+                ime: &mut self.ime,
                 m_cycle: self.m_cycle,
                 phase: self.phase,
             }
@@ -878,6 +881,7 @@ impl<'a> InstrExecution<'a> {
 
 struct InterruptModeCpu<'a> {
     regs: &'a mut Regs,
+    ime: &'a mut bool,
     m_cycle: MCycle,
     phase: Phase,
 }
@@ -906,6 +910,7 @@ impl<'a> InterruptModeCpu<'a> {
                     )
                 }
                 Tock => {
+                    *self.ime = false;
                     let n = input.r#if.trailing_zeros();
                     self.regs.pc = 0x0040 + 8 * n as u16;
                     (Some(ModeTransition::Instruction(Opcode(0x00))), None)

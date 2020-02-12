@@ -178,6 +178,7 @@ impl Cpu {
         let sp = self.regs.sp;
         let r#if = 0x01 << n;
         let input = Input { data: None, r#if };
+        self.ime = true;
         assert_eq!(self.step(&input), Some(BusOp::Read(pc)));
         assert_eq!(
             self.step(&Input {
@@ -194,6 +195,7 @@ impl Cpu {
         assert_eq!(self.step(&input), None);
         assert_eq!(self.step(&input), Some(BusOp::Write(sp - 2, low_byte(pc))));
         assert_eq!(self.step(&input), None);
+        assert!(!self.ime);
         assert_eq!(
             self.step(&Input::with_data(None)),
             Some(BusOp::Read(0x0040 + 8 * n))
