@@ -26,12 +26,12 @@ pub struct Cpu {
     pub regs: Regs,
     pub ie: u8,
     pub ime: bool,
-    mode: Mode,
+    state: State,
     m_cycle: MCycle,
     phase: Phase,
 }
 
-enum Mode {
+enum State {
     Instruction(InstructionExecutionState),
     Interrupt,
 }
@@ -196,7 +196,7 @@ impl Default for Cpu {
             regs: Default::default(),
             ie: 0x00,
             ime: false,
-            mode: Mode::Instruction(Default::default()),
+            state: State::Instruction(Default::default()),
             m_cycle: M2,
             phase: Tick,
         }
@@ -217,8 +217,8 @@ impl Default for InstructionExecutionState {
 
 impl Cpu {
     pub fn step(&mut self, input: &Input) -> CpuOutput {
-        let (mode_transition, output) = match &mut self.mode {
-            Mode::Instruction(state) => RunModeCpu {
+        let (mode_transition, output) = match &mut self.state {
+            State::Instruction(state) => RunModeCpu {
                 regs: &mut self.regs,
                 ie: &mut self.ie,
                 state,
@@ -226,7 +226,7 @@ impl Cpu {
                 phase: self.phase,
             }
             .step(input),
-            Mode::Interrupt => InterruptModeCpu {
+            State::Interrupt => InterruptModeCpu {
                 regs: &mut self.regs,
                 ime: &mut self.ime,
                 m_cycle: self.m_cycle,
@@ -242,7 +242,7 @@ impl Cpu {
             }
         };
         if let Some(transition) = mode_transition {
-            self.mode = transition.into();
+            self.state = transition.into();
             self.m_cycle = M2;
         }
         output
@@ -255,17 +255,17 @@ enum ModeTransition {
     Interrupt,
 }
 
-impl From<ModeTransition> for Mode {
+impl From<ModeTransition> for State {
     fn from(transition: ModeTransition) -> Self {
         match transition {
-            ModeTransition::Instruction(opcode) => Mode::Instruction(InstructionExecutionState {
+            ModeTransition::Instruction(opcode) => State::Instruction(InstructionExecutionState {
                 opcode,
                 bus_data: None,
                 m1: false,
                 data: 0xff,
                 addr: 0xffff,
             }),
-            ModeTransition::Interrupt => Mode::Interrupt,
+            ModeTransition::Interrupt => State::Interrupt,
         }
     }
 }
