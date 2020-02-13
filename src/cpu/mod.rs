@@ -24,12 +24,12 @@ mod interrupt;
 mod tests;
 
 pub struct Cpu {
-    pub data: Data,
-    state: State,
+    pub data: BasicData,
+    mode: Mode,
 }
 
 #[derive(Default)]
-pub struct Data {
+pub struct BasicData {
     // ISA registers
     pub a: u8,
     pub f: Flags,
@@ -45,7 +45,6 @@ pub struct Data {
     pub ie: u8,
     pub ime: bool,
 
-    m_cycle: MCycle,
     phase: Phase,
 }
 
@@ -57,7 +56,20 @@ pub struct Flags {
     pub cy: bool,
 }
 
-enum State {
+enum Mode {
+    Run(Run),
+}
+
+struct Run {
+    data: RunData,
+    task: Task,
+}
+
+struct RunData {
+    m_cycle: MCycle,
+}
+
+enum Task {
     Instruction(InstructionExecutionState),
     Interrupt(InterruptDispatchState),
 }
@@ -72,8 +84,68 @@ struct InstructionExecutionState {
 
 struct InterruptDispatchState;
 
-struct View<'a, T> {
-    data: &'a mut Data,
+impl Default for Cpu {
+    fn default() -> Self {
+        Self {
+            data: Default::default(),
+            mode: Mode::Run(Run::new(Task::Instruction(InstructionExecutionState::new(
+                0x00,
+            )))),
+        }
+    }
+}
+
+impl Cpu {
+    pub fn step(&mut self, input: &Input) -> CpuOutput {
+        let (transition, output) = match &mut self.mode {
+            Mode::Run(mode) => BasicView {
+                basic: &mut self.data,
+                mode,
+            }
+            .step(input),
+        };
+        self.data.phase = match self.data.phase {
+            Tick => Tock,
+            Tock => Tick,
+        };
+        if let Some(transition) = transition {
+            self.mode = transition.into();
+        }
+        output
+    }
+}
+
+struct BasicView<'a> {
+    basic: &'a mut BasicData,
+    mode: &'a mut Run,
+}
+
+impl<'a> BasicView<'a> {
+    fn step(&mut self, input: &Input) -> (Option<ModeTransition>, CpuOutput) {
+        let result = match &mut self.mode.task {
+            Task::Instruction(state) => RunView {
+                basic: self.basic,
+                run: &mut self.mode.data,
+                state,
+            }
+            .step(input),
+            Task::Interrupt(state) => RunView {
+                basic: self.basic,
+                run: &mut self.mode.data,
+                state,
+            }
+            .step(input),
+        };
+        if self.basic.phase == Tock {
+            self.mode.data.m_cycle = self.mode.data.m_cycle.next();
+        }
+        result
+    }
+}
+
+struct RunView<'a, T> {
+    basic: &'a mut BasicData,
+    run: &'a mut RunData,
     state: &'a mut T,
 }
 
@@ -214,79 +286,42 @@ impl MCycle {
     }
 }
 
-impl Default for MCycle {
-    fn default() -> Self {
-        M2
-    }
-}
-
-impl Default for Cpu {
-    fn default() -> Self {
-        Self {
-            data: Default::default(),
-            state: State::Instruction(Default::default()),
-        }
-    }
-}
-
-impl Default for InstructionExecutionState {
-    fn default() -> Self {
-        InstructionExecutionState {
-            opcode: 0x00,
-            bus_data: None,
-            m1: false,
-            data: 0xff,
-            addr: 0xffff,
-        }
-    }
-}
-
-impl Cpu {
-    pub fn step(&mut self, input: &Input) -> CpuOutput {
-        let (mode_transition, output) = match &mut self.state {
-            State::Instruction(state) => View {
-                data: &mut self.data,
-                state,
-            }
-            .step(input),
-            State::Interrupt(state) => View {
-                data: &mut self.data,
-                state,
-            }
-            .step(input),
-        };
-        self.data.phase = match self.data.phase {
-            Tick => Tock,
-            Tock => {
-                self.data.m_cycle = self.data.m_cycle.next();
-                Tick
-            }
-        };
-        if let Some(transition) = mode_transition {
-            self.state = transition.into();
-            self.data.m_cycle = M2;
-        }
-        output
-    }
-}
-
 #[derive(Clone, Copy)]
 enum ModeTransition {
     Instruction(u8),
     Interrupt,
 }
 
-impl From<ModeTransition> for State {
+impl From<ModeTransition> for Mode {
     fn from(transition: ModeTransition) -> Self {
         match transition {
-            ModeTransition::Instruction(opcode) => State::Instruction(InstructionExecutionState {
-                opcode,
-                bus_data: None,
-                m1: false,
-                data: 0xff,
-                addr: 0xffff,
-            }),
-            ModeTransition::Interrupt => State::Interrupt(InterruptDispatchState),
+            ModeTransition::Instruction(opcode) => Mode::Run(Run::new(Task::Instruction(
+                InstructionExecutionState::new(opcode),
+            ))),
+            ModeTransition::Interrupt => {
+                Mode::Run(Run::new(Task::Interrupt(InterruptDispatchState)))
+            }
+        }
+    }
+}
+
+impl Run {
+    fn new(task: Task) -> Self {
+        Run {
+            data: RunData { m_cycle: M2 },
+            task,
+        }
+    }
+}
+
+impl InstructionExecutionState {
+    fn new(opcode: u8) -> Self {
+        Self {
+            opcode,
+            m1: false,
+            bus_data: None,
+            addr: 0xffff,
+            data: 0xff,
         }
     }
 }
@@ -346,7 +381,7 @@ enum RegSelect {
     SpL,
 }
 
-impl Data {
+impl BasicData {
     fn bc(&self) -> u16 {
         self.pair(R::B, R::C)
     }

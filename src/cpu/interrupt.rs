@@ -1,32 +1,32 @@
 use super::*;
 
-impl<'a> View<'a, InterruptDispatchState> {
+impl<'a> RunView<'a, InterruptDispatchState> {
     pub(super) fn step(&mut self, input: &Input) -> (Option<ModeTransition>, CpuOutput) {
-        match self.data.m_cycle {
+        match self.run.m_cycle {
             M2 => (None, None),
             M3 => (None, None),
-            M4 => match self.data.phase {
+            M4 => match self.basic.phase {
                 Tick => {
-                    self.data.sp -= 1;
+                    self.basic.sp -= 1;
                     (
                         None,
-                        Some(BusOp::Write(self.data.sp, high_byte(self.data.pc))),
+                        Some(BusOp::Write(self.basic.sp, high_byte(self.basic.pc))),
                     )
                 }
                 Tock => (None, None),
             },
-            M5 => match self.data.phase {
+            M5 => match self.basic.phase {
                 Tick => {
-                    self.data.sp -= 1;
+                    self.basic.sp -= 1;
                     (
                         None,
-                        Some(BusOp::Write(self.data.sp, low_byte(self.data.pc))),
+                        Some(BusOp::Write(self.basic.sp, low_byte(self.basic.pc))),
                     )
                 }
                 Tock => {
-                    self.data.ime = false;
+                    self.basic.ime = false;
                     let n = input.r#if.trailing_zeros();
-                    self.data.pc = 0x0040 + 8 * n as u16;
+                    self.basic.pc = 0x0040 + 8 * n as u16;
                     (Some(ModeTransition::Instruction(0x00)), None)
                 }
             },
