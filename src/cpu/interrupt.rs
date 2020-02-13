@@ -27,7 +27,7 @@ impl<'a> RunView<'a, InterruptDispatchState> {
                     self.basic.ime = false;
                     let n = input.r#if.trailing_zeros();
                     self.basic.pc = 0x0040 + 8 * n as u16;
-                    (Some(ModeTransition::Instruction(0x00)), None)
+                    (Some(ModeTransition::Instruction(NOP)), None)
                 }
             },
             _ => unreachable!(),

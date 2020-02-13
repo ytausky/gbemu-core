@@ -89,11 +89,13 @@ impl Default for Cpu {
         Self {
             data: Default::default(),
             mode: Mode::Run(Run::new(Task::Instruction(InstructionExecutionState::new(
-                0x00,
+                NOP,
             )))),
         }
     }
 }
+
+const NOP: u8 = 0x00;
 
 impl Cpu {
     pub fn step(&mut self, input: &Input) -> CpuOutput {
