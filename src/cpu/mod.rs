@@ -57,8 +57,11 @@ pub struct Flags {
 }
 
 enum Mode {
+    Halt(Halt),
     Run(Run),
 }
+
+struct Halt;
 
 struct Run {
     data: RunData,
@@ -78,9 +81,15 @@ struct InstructionExecutionState {
     opcode: u8,
     bus_data: Option<u8>,
     read_ie: bool,
+    standby: Option<Standby>,
     m1: bool,
     data: u8,
     addr: u16,
+}
+
+#[derive(Clone, Copy)]
+enum Standby {
+    Halt,
 }
 
 struct InterruptDispatchState;
@@ -101,6 +110,11 @@ const NOP: u8 = 0x00;
 impl Cpu {
     pub fn step(&mut self, input: &Input) -> CpuOutput {
         let (transition, output) = match &mut self.mode {
+            Mode::Halt(mode) => BasicView {
+                basic: &mut self.data,
+                mode,
+            }
+            .step(input),
             Mode::Run(mode) => BasicView {
                 basic: &mut self.data,
                 mode,
@@ -118,12 +132,28 @@ impl Cpu {
     }
 }
 
-struct BasicView<'a> {
+struct BasicView<'a, T> {
     basic: &'a mut BasicData,
-    mode: &'a mut Run,
+    mode: &'a mut T,
 }
 
-impl<'a> BasicView<'a> {
+impl<'a> BasicView<'a, Halt> {
+    fn step(&mut self, input: &Input) -> (Option<ModeTransition>, CpuOutput) {
+        match self.basic.phase {
+            Tick => (None, None),
+            Tock => {
+                let transition = if input.r#if & self.basic.ie != 0x00 {
+                    Some(ModeTransition::Interrupt)
+                } else {
+                    None
+                };
+                (transition, None)
+            }
+        }
+    }
+}
+
+impl<'a> BasicView<'a, Run> {
     fn step(&mut self, input: &Input) -> (Option<ModeTransition>, CpuOutput) {
         let result = match &mut self.mode.task {
             Task::Instruction(state) => RunView {
@@ -300,6 +330,7 @@ impl MCycle {
 
 #[derive(Clone, Copy)]
 enum ModeTransition {
+    Halt,
     Instruction(u8),
     Interrupt,
 }
@@ -307,12 +338,21 @@ enum ModeTransition {
 impl From<ModeTransition> for Mode {
     fn from(transition: ModeTransition) -> Self {
         match transition {
+            ModeTransition::Halt => Mode::Halt(Halt),
             ModeTransition::Instruction(opcode) => Mode::Run(Run::new(Task::Instruction(
                 InstructionExecutionState::new(opcode),
             ))),
             ModeTransition::Interrupt => {
                 Mode::Run(Run::new(Task::Interrupt(InterruptDispatchState)))
             }
+        }
+    }
+}
+
+impl From<Standby> for ModeTransition {
+    fn from(standby: Standby) -> Self {
+        match standby {
+            Standby::Halt => ModeTransition::Halt,
         }
     }
 }
@@ -333,6 +373,7 @@ impl InstructionExecutionState {
             m1: false,
             bus_data: None,
             read_ie: false,
+            standby: None,
             addr: 0xffff,
             data: 0xff,
         }

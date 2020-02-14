@@ -25,6 +25,8 @@ impl<'a> RunView<'a, InstructionExecutionState> {
                         self.basic.pc += 1;
                         ModeTransition::Instruction(self.state.bus_data.unwrap())
                     })
+                } else if let Some(standby) = self.state.standby {
+                    Some(standby.into())
                 } else {
                     None
                 };
@@ -84,7 +86,13 @@ impl<'a> RunView<'a, InstructionExecutionState> {
     }
 
     fn halt(&mut self) -> Option<BusActivity> {
-        unimplemented!()
+        match self.run.m_cycle {
+            M2 => {
+                self.state.standby = Some(Standby::Halt);
+                None
+            }
+            _ => unreachable!(),
+        }
     }
 
     fn ld_r_r(&mut self, dest: R, src: R) -> Option<BusActivity> {
