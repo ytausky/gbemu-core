@@ -32,6 +32,22 @@ fn enabled_interrupt_not_dispatched_with_reset_ime() {
     cpu.assert_no_interrupt_dispatch(0x01)
 }
 
+#[ignore]
+#[test]
+fn ld_deref_0xffff_sets_5_lower_bits_of_ie() {
+    let mut cpu = Cpu::default();
+    cpu.data.ie = 0x00;
+    cpu.data.a = 0xff;
+    cpu.test_simple_instr(
+        &[0xe0, 0xff],
+        &[
+            (Input::with_data(None), Some(BusOp::Write(0xffff, 0xff))),
+            (Input::with_data(None), None),
+        ],
+    );
+    assert_eq!(cpu.data.ie, 0x1f)
+}
+
 impl Cpu {
     fn assert_interrupt_dispatch(&mut self, n: u16) {
         let pc = self.data.pc;
