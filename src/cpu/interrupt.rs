@@ -22,7 +22,7 @@ impl<'a> RunView<'a, InterruptDispatchState> {
                 }
                 Tock => {
                     self.basic.ime = false;
-                    let n = input.r#if.trailing_zeros();
+                    let n = (input.r#if & self.basic.ie).trailing_zeros();
                     self.basic.pc = 0x0040 + 8 * n as u16;
                     (Some(ModeTransition::Instruction(NOP)), None)
                 }

@@ -6,7 +6,7 @@ fn dispatch_interrupt_0() {
     cpu.data.pc = 0x3000;
     cpu.data.sp = 0x2000;
     cpu.data.ie = 0x01;
-    cpu.assert_interrupt_dispatch(0x0000)
+    cpu.assert_interrupt_dispatch(0x01, 0)
 }
 
 #[test]
@@ -15,7 +15,7 @@ fn dispatch_interrupt_1() {
     cpu.data.pc = 0x3000;
     cpu.data.sp = 0x2000;
     cpu.data.ie = 0x02;
-    cpu.assert_interrupt_dispatch(0x0001)
+    cpu.assert_interrupt_dispatch(0x02, 1)
 }
 
 #[test]
@@ -30,6 +30,14 @@ fn enabled_interrupt_not_dispatched_with_reset_ime() {
     cpu.data.ie = 0x01;
     cpu.data.ime = false;
     cpu.assert_no_interrupt_dispatch(0x01)
+}
+
+#[test]
+fn ie_is_checked_when_choosing_interrupt_vector() {
+    let mut cpu = Cpu::default();
+    cpu.data.sp = 0x8000;
+    cpu.data.ie = 0x02;
+    cpu.assert_interrupt_dispatch(0x03, 1)
 }
 
 #[test]
@@ -85,15 +93,14 @@ fn writing_0xffff_during_interrupt_dispatch_updates_ie() {
     cpu.data.pc = 0xff00;
     cpu.data.sp = 0x0000;
     cpu.data.ie = 0x01;
-    cpu.assert_interrupt_dispatch(0);
+    cpu.assert_interrupt_dispatch(0x01, 0);
     assert_eq!(cpu.data.ie, 0x1f)
 }
 
 impl Cpu {
-    fn assert_interrupt_dispatch(&mut self, n: u16) {
+    fn assert_interrupt_dispatch(&mut self, r#if: u8, n: u16) {
         let pc = self.data.pc;
         let sp = self.data.sp;
-        let r#if = 0x01 << n;
         let input = Input { data: None, r#if };
         self.data.ime = true;
         assert_eq!(self.step(&input), bus_read(pc));
