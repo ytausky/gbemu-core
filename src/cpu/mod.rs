@@ -77,6 +77,7 @@ enum Task {
 struct InstructionExecutionState {
     opcode: u8,
     bus_data: Option<u8>,
+    read_ie: bool,
     m1: bool,
     data: u8,
     addr: u16,
@@ -322,6 +323,7 @@ impl InstructionExecutionState {
             opcode,
             m1: false,
             bus_data: None,
+            read_ie: false,
             addr: 0xffff,
             data: 0xff,
         }

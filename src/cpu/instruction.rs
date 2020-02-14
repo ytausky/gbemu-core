@@ -12,7 +12,12 @@ impl<'a> RunView<'a, InstructionExecutionState> {
                 (None, output)
             }
             Tock => {
-                self.state.bus_data = input.data;
+                self.state.bus_data = if self.state.read_ie {
+                    self.state.read_ie = false;
+                    Some(self.basic.ie)
+                } else {
+                    input.data
+                };
                 let transition = if self.state.m1 {
                     Some(if self.basic.ime && input.r#if & self.basic.ie != 0x00 {
                         ModeTransition::Interrupt
@@ -105,7 +110,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
 
     fn ld_r_deref_hl(&mut self, dest: R) -> Option<BusActivity> {
         match self.run.m_cycle {
-            M2 => bus_read(self.basic.hl()),
+            M2 => self.bus_read(self.basic.hl()),
             M3 => {
                 self.basic.write(dest, self.state.bus_data.unwrap());
                 self.execute_m1()
@@ -133,7 +138,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
 
     fn ld_a_deref_bc(&mut self) -> Option<BusActivity> {
         match self.run.m_cycle {
-            M2 => bus_read(self.basic.bc()),
+            M2 => self.bus_read(self.basic.bc()),
             M3 => {
                 self.basic.a = self.state.bus_data.unwrap();
                 self.execute_m1()
@@ -144,7 +149,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
 
     fn ld_a_deref_de(&mut self) -> Option<BusActivity> {
         match self.run.m_cycle {
-            M2 => bus_read(self.basic.de()),
+            M2 => self.bus_read(self.basic.de()),
             M3 => {
                 self.basic.a = self.state.bus_data.unwrap();
                 self.execute_m1()
@@ -155,7 +160,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
 
     fn ld_a_deref_c(&mut self) -> Option<BusActivity> {
         match self.run.m_cycle {
-            M2 => bus_read(u16::from_be_bytes([0xff, self.basic.c])),
+            M2 => self.bus_read(u16::from_be_bytes([0xff, self.basic.c])),
             M3 => {
                 self.basic.a = self.state.bus_data.unwrap();
                 self.execute_m1()
@@ -175,7 +180,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
     fn ld_a_deref_n(&mut self) -> Option<BusActivity> {
         match self.run.m_cycle {
             M2 => self.read_immediate(),
-            M3 => bus_read(u16::from_be_bytes([0xff, self.state.bus_data.unwrap()])),
+            M3 => self.bus_read(u16::from_be_bytes([0xff, self.state.bus_data.unwrap()])),
             M4 => {
                 self.basic.a = self.state.bus_data.unwrap();
                 self.execute_m1()
@@ -203,7 +208,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
                 self.state.data = self.state.bus_data.unwrap();
                 self.read_immediate()
             }
-            M4 => bus_read(u16::from_be_bytes([
+            M4 => self.bus_read(u16::from_be_bytes([
                 self.state.bus_data.unwrap(),
                 self.state.data,
             ])),
@@ -238,7 +243,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
                 let incremented_hl = hl + 1;
                 self.basic.h = high_byte(incremented_hl);
                 self.basic.l = low_byte(incremented_hl);
-                bus_read(hl)
+                self.bus_read(hl)
             }
             M3 => {
                 self.basic.a = self.state.bus_data.unwrap();
@@ -255,7 +260,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
                 let decremented_hl = hl - 1;
                 self.basic.h = high_byte(decremented_hl);
                 self.basic.l = low_byte(decremented_hl);
-                bus_read(hl)
+                self.bus_read(hl)
             }
             M3 => {
                 self.basic.a = self.state.bus_data.unwrap();
@@ -422,7 +427,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
 
     fn alu_op_deref_hl(&mut self, op: AluOp) -> Option<BusActivity> {
         match self.run.m_cycle {
-            M2 => bus_read(self.basic.hl()),
+            M2 => self.bus_read(self.basic.hl()),
             M3 => {
                 let (result, flags) = self.alu_op(op, self.basic.a, self.state.bus_data.unwrap());
                 self.basic.a = result;
@@ -449,7 +454,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
 
     fn inc_deref_hl(&mut self) -> Option<BusActivity> {
         match self.run.m_cycle {
-            M2 => bus_read(self.basic.hl()),
+            M2 => self.bus_read(self.basic.hl()),
             M3 => {
                 let (result, flags) = add(self.state.bus_data.unwrap(), 1, false);
                 self.basic.f.z = flags.z;
@@ -540,13 +545,13 @@ impl<'a> RunView<'a, InstructionExecutionState> {
 
     fn execute_m1(&mut self) -> Option<BusActivity> {
         self.state.m1 = true;
-        bus_read(self.basic.pc)
+        self.bus_read(self.basic.pc)
     }
 
     fn read_immediate(&mut self) -> Option<BusActivity> {
         let addr = self.basic.pc;
         self.basic.pc += 1;
-        bus_read(addr)
+        self.bus_read(addr)
     }
 
     fn push_byte(&mut self, data: u8) -> Option<BusActivity> {
@@ -559,7 +564,14 @@ impl<'a> RunView<'a, InstructionExecutionState> {
 
     fn pop_byte(&mut self) -> Option<BusActivity> {
         let addr = self.basic.sp;
-        self.basic.sp += 1;
+        self.basic.sp = self.basic.sp.wrapping_add(1);
+        self.bus_read(addr)
+    }
+
+    fn bus_read(&mut self, addr: u16) -> Option<BusActivity> {
+        if addr == 0xffff {
+            self.state.read_ie = true;
+        }
         bus_read(addr)
     }
 

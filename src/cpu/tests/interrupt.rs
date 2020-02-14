@@ -33,7 +33,39 @@ fn enabled_interrupt_not_dispatched_with_reset_ime() {
 }
 
 #[test]
-fn ld_deref_0xffff_sets_5_lower_bits_of_ie() {
+fn reading_0xffff_returns_ie() {
+    let mut cpu = Cpu::default();
+    cpu.data.ie = 0x15;
+    cpu.test_simple_instr(
+        &[0xf0, 0xff],
+        &[
+            (Input::with_data(None), bus_read(0xffff)),
+            (Input::with_data(None), None),
+        ],
+    );
+    assert_eq!(cpu.data.a, 0x15)
+}
+
+#[test]
+fn read_memory_in_same_instruction_after_reading_0xffff() {
+    let mut cpu = Cpu::default();
+    cpu.data.sp = 0xffff;
+    cpu.data.ie = 0x15;
+    const POP_BC: u8 = 0xc1;
+    cpu.test_simple_instr(
+        &[POP_BC],
+        &[
+            (Input::with_data(None), bus_read(0xffff)),
+            (Input::with_data(None), None),
+            (Input::with_data(None), bus_read(0x0000)),
+            (Input::with_data(Some(0x42)), None),
+        ],
+    );
+    assert_eq!(cpu.data.bc(), 0x4215)
+}
+
+#[test]
+fn writing_0xffff_sets_5_lower_bits_of_ie() {
     let mut cpu = Cpu::default();
     cpu.data.ie = 0x00;
     cpu.data.a = 0xff;
