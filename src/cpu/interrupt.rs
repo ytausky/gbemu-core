@@ -7,15 +7,18 @@ impl<'a> RunView<'a, InterruptDispatchState> {
             M3 => (None, None),
             M4 => match self.basic.phase {
                 Tick => {
-                    self.basic.sp -= 1;
-                    (None, bus_write(self.basic.sp, high_byte(self.basic.pc)))
+                    self.basic.sp = self.basic.sp.wrapping_sub(1);
+                    (
+                        None,
+                        self.bus_write(self.basic.sp, high_byte(self.basic.pc)),
+                    )
                 }
                 Tock => (None, None),
             },
             M5 => match self.basic.phase {
                 Tick => {
                     self.basic.sp -= 1;
-                    (None, bus_write(self.basic.sp, low_byte(self.basic.pc)))
+                    (None, self.bus_write(self.basic.sp, low_byte(self.basic.pc)))
                 }
                 Tock => {
                     self.basic.ime = false;

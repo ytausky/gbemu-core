@@ -79,6 +79,16 @@ fn writing_0xffff_sets_5_lower_bits_of_ie() {
     assert_eq!(cpu.data.ie, 0x1f)
 }
 
+#[test]
+fn writing_0xffff_during_interrupt_dispatch_updates_ie() {
+    let mut cpu = Cpu::default();
+    cpu.data.pc = 0xff00;
+    cpu.data.sp = 0x0000;
+    cpu.data.ie = 0x01;
+    cpu.assert_interrupt_dispatch(0);
+    assert_eq!(cpu.data.ie, 0x1f)
+}
+
 impl Cpu {
     fn assert_interrupt_dispatch(&mut self, n: u16) {
         let pc = self.data.pc;
@@ -98,9 +108,15 @@ impl Cpu {
         assert_eq!(self.step(&input), None);
         assert_eq!(self.step(&input), None);
         assert_eq!(self.step(&input), None);
-        assert_eq!(self.step(&input), bus_write(sp - 1, high_byte(pc)));
+        assert_eq!(
+            self.step(&input),
+            bus_write(sp.wrapping_sub(1), high_byte(pc))
+        );
         assert_eq!(self.step(&input), None);
-        assert_eq!(self.step(&input), bus_write(sp - 2, low_byte(pc)));
+        assert_eq!(
+            self.step(&input),
+            bus_write(sp.wrapping_sub(2), low_byte(pc))
+        );
         assert_eq!(self.step(&input), None);
         assert!(!self.data.ime);
         assert_eq!(self.step(&Input::with_data(None)), bus_read(0x0040 + 8 * n));

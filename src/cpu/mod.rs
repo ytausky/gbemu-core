@@ -152,6 +152,15 @@ struct RunView<'a, T> {
     state: &'a mut T,
 }
 
+impl<'a, T> RunView<'a, T> {
+    fn bus_write(&mut self, addr: u16, data: u8) -> Option<BusActivity> {
+        if addr == 0xffff {
+            self.basic.ie = data & 0x1f
+        }
+        bus_write(addr, data)
+    }
+}
+
 #[derive(Clone, Copy, PartialEq)]
 enum R {
     A,

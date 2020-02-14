@@ -575,13 +575,6 @@ impl<'a> RunView<'a, InstructionExecutionState> {
         bus_read(addr)
     }
 
-    fn bus_write(&mut self, addr: u16, data: u8) -> Option<BusActivity> {
-        if addr == 0xffff {
-            self.basic.ie = data & 0x1f
-        }
-        bus_write(addr, data)
-    }
-
     fn alu_op(&self, op: AluOp, lhs: u8, rhs: u8) -> (u8, Flags) {
         match op {
             AluOp::Add => add(lhs, rhs, false),
