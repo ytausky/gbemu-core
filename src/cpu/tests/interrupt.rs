@@ -32,7 +32,6 @@ fn enabled_interrupt_not_dispatched_with_reset_ime() {
     cpu.assert_no_interrupt_dispatch(0x01)
 }
 
-#[ignore]
 #[test]
 fn ld_deref_0xffff_sets_5_lower_bits_of_ie() {
     let mut cpu = Cpu::default();

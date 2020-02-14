@@ -116,7 +116,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
 
     fn ld_deref_hl_r(&mut self, src: R) -> Option<BusActivity> {
         match self.run.m_cycle {
-            M2 => bus_write(self.basic.hl(), self.basic.read(src)),
+            M2 => self.bus_write(self.basic.hl(), self.basic.read(src)),
             M3 => self.execute_m1(),
             _ => unreachable!(),
         }
@@ -125,7 +125,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
     fn ld_deref_hl_n(&mut self) -> Option<BusActivity> {
         match self.run.m_cycle {
             M2 => self.read_immediate(),
-            M3 => bus_write(self.basic.hl(), self.state.bus_data.unwrap()),
+            M3 => self.bus_write(self.basic.hl(), self.state.bus_data.unwrap()),
             M4 => self.execute_m1(),
             _ => unreachable!(),
         }
@@ -166,7 +166,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
 
     fn ld_deref_c_a(&mut self) -> Option<BusActivity> {
         match self.run.m_cycle {
-            M2 => bus_write(u16::from_be_bytes([0xff, self.basic.c]), self.basic.a),
+            M2 => self.bus_write(u16::from_be_bytes([0xff, self.basic.c]), self.basic.a),
             M3 => self.execute_m1(),
             _ => unreachable!(),
         }
@@ -187,7 +187,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
     fn ld_deref_n_a(&mut self) -> Option<BusActivity> {
         match self.run.m_cycle {
             M2 => self.read_immediate(),
-            M3 => bus_write(
+            M3 => self.bus_write(
                 u16::from_be_bytes([0xff, self.state.bus_data.unwrap()]),
                 self.basic.a,
             ),
@@ -222,7 +222,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
                 self.state.data = self.state.bus_data.unwrap();
                 self.read_immediate()
             }
-            M4 => bus_write(
+            M4 => self.bus_write(
                 u16::from_be_bytes([self.state.bus_data.unwrap(), self.state.data]),
                 self.basic.a,
             ),
@@ -267,7 +267,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
 
     fn ld_deref_bc_a(&mut self) -> Option<BusActivity> {
         match self.run.m_cycle {
-            M2 => bus_write(self.basic.bc(), self.basic.a),
+            M2 => self.bus_write(self.basic.bc(), self.basic.a),
             M3 => self.execute_m1(),
             _ => unreachable!(),
         }
@@ -275,7 +275,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
 
     fn ld_deref_de_a(&mut self) -> Option<BusActivity> {
         match self.run.m_cycle {
-            M2 => bus_write(self.basic.de(), self.basic.a),
+            M2 => self.bus_write(self.basic.de(), self.basic.a),
             M3 => self.execute_m1(),
             _ => unreachable!(),
         }
@@ -288,7 +288,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
                 let incremented_hl = hl.wrapping_add(1);
                 self.basic.h = high_byte(incremented_hl);
                 self.basic.l = low_byte(incremented_hl);
-                bus_write(hl, self.basic.a)
+                self.bus_write(hl, self.basic.a)
             }
             M3 => self.execute_m1(),
             _ => unreachable!(),
@@ -302,7 +302,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
                 let decremented_hl = hl - 1;
                 self.basic.h = high_byte(decremented_hl);
                 self.basic.l = low_byte(decremented_hl);
-                bus_write(hl, self.basic.a)
+                self.bus_write(hl, self.basic.a)
             }
             M3 => self.execute_m1(),
             _ => unreachable!(),
@@ -387,9 +387,9 @@ impl<'a> RunView<'a, InstructionExecutionState> {
             }
             M4 => {
                 self.state.addr |= (self.state.bus_data.unwrap() as u16) << 8;
-                bus_write(self.state.addr, low_byte(self.basic.sp))
+                self.bus_write(self.state.addr, low_byte(self.basic.sp))
             }
-            M5 => bus_write(self.state.addr + 1, high_byte(self.basic.sp)),
+            M5 => self.bus_write(self.state.addr + 1, high_byte(self.basic.sp)),
             M6 => self.execute_m1(),
             _ => unreachable!(),
         }
@@ -455,7 +455,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
                 self.basic.f.z = flags.z;
                 self.basic.f.n = flags.n;
                 self.basic.f.h = flags.h;
-                bus_write(self.basic.hl(), result)
+                self.bus_write(self.basic.hl(), result)
             }
             M4 => self.execute_m1(),
             _ => unreachable!(),
@@ -561,6 +561,13 @@ impl<'a> RunView<'a, InstructionExecutionState> {
         let addr = self.basic.sp;
         self.basic.sp += 1;
         bus_read(addr)
+    }
+
+    fn bus_write(&mut self, addr: u16, data: u8) -> Option<BusActivity> {
+        if addr == 0xffff {
+            self.basic.ie = data & 0x1f
+        }
+        bus_write(addr, data)
     }
 
     fn alu_op(&self, op: AluOp, lhs: u8, rhs: u8) -> (u8, Flags) {
