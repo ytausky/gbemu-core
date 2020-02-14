@@ -14,7 +14,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
             Tock => {
                 self.state.bus_data = input.data;
                 let transition = if self.state.m1 {
-                    Some(if input.r#if & self.basic.ie != 0x00 {
+                    Some(if self.basic.ime && input.r#if & self.basic.ie != 0x00 {
                         ModeTransition::Interrupt
                     } else {
                         self.basic.pc += 1;
