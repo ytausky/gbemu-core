@@ -8,20 +8,14 @@ impl<'a> RunView<'a, InterruptDispatchState> {
             M4 => match self.basic.phase {
                 Tick => {
                     self.basic.sp -= 1;
-                    (
-                        None,
-                        Some(BusOp::Write(self.basic.sp, high_byte(self.basic.pc))),
-                    )
+                    (None, bus_write(self.basic.sp, high_byte(self.basic.pc)))
                 }
                 Tock => (None, None),
             },
             M5 => match self.basic.phase {
                 Tick => {
                     self.basic.sp -= 1;
-                    (
-                        None,
-                        Some(BusOp::Write(self.basic.sp, low_byte(self.basic.pc))),
-                    )
+                    (None, bus_write(self.basic.sp, low_byte(self.basic.pc)))
                 }
                 Tock => {
                     self.basic.ime = false;

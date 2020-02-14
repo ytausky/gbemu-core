@@ -368,12 +368,32 @@ impl Default for Phase {
     }
 }
 
-type CpuOutput = Option<BusOp>;
+type CpuOutput = Option<BusActivity>;
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct BusActivity {
+    pub addr: u16,
+    pub op: Option<BusOp>,
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum BusOp {
-    Read(u16),
-    Write(u16, u8),
+    Read,
+    Write(u8),
+}
+
+fn bus_read(addr: u16) -> Option<BusActivity> {
+    Some(BusActivity {
+        addr,
+        op: Some(BusOp::Read),
+    })
+}
+
+fn bus_write(addr: u16, data: u8) -> Option<BusActivity> {
+    Some(BusActivity {
+        addr,
+        op: Some(BusOp::Write(data)),
+    })
 }
 
 enum RegSelect {

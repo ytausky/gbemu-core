@@ -71,18 +71,18 @@ impl<'a> RunView<'a, InstructionExecutionState> {
         }
     }
 
-    fn nop(&mut self) -> Option<BusOp> {
+    fn nop(&mut self) -> Option<BusActivity> {
         match self.run.m_cycle {
             M2 => self.execute_m1(),
             _ => unreachable!(),
         }
     }
 
-    fn halt(&mut self) -> Option<BusOp> {
+    fn halt(&mut self) -> Option<BusActivity> {
         unimplemented!()
     }
 
-    fn ld_r_r(&mut self, dest: R, src: R) -> Option<BusOp> {
+    fn ld_r_r(&mut self, dest: R, src: R) -> Option<BusActivity> {
         match self.run.m_cycle {
             M2 => {
                 self.basic.write(dest, self.basic.read(src));
@@ -92,7 +92,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
         }
     }
 
-    fn ld_r_n(&mut self, dest: R) -> Option<BusOp> {
+    fn ld_r_n(&mut self, dest: R) -> Option<BusActivity> {
         match self.run.m_cycle {
             M2 => self.read_immediate(),
             M3 => {
@@ -103,9 +103,9 @@ impl<'a> RunView<'a, InstructionExecutionState> {
         }
     }
 
-    fn ld_r_deref_hl(&mut self, dest: R) -> Option<BusOp> {
+    fn ld_r_deref_hl(&mut self, dest: R) -> Option<BusActivity> {
         match self.run.m_cycle {
-            M2 => Some(BusOp::Read(self.basic.hl())),
+            M2 => bus_read(self.basic.hl()),
             M3 => {
                 self.basic.write(dest, self.state.bus_data.unwrap());
                 self.execute_m1()
@@ -114,26 +114,26 @@ impl<'a> RunView<'a, InstructionExecutionState> {
         }
     }
 
-    fn ld_deref_hl_r(&mut self, src: R) -> Option<BusOp> {
+    fn ld_deref_hl_r(&mut self, src: R) -> Option<BusActivity> {
         match self.run.m_cycle {
-            M2 => Some(BusOp::Write(self.basic.hl(), self.basic.read(src))),
+            M2 => bus_write(self.basic.hl(), self.basic.read(src)),
             M3 => self.execute_m1(),
             _ => unreachable!(),
         }
     }
 
-    fn ld_deref_hl_n(&mut self) -> Option<BusOp> {
+    fn ld_deref_hl_n(&mut self) -> Option<BusActivity> {
         match self.run.m_cycle {
             M2 => self.read_immediate(),
-            M3 => Some(BusOp::Write(self.basic.hl(), self.state.bus_data.unwrap())),
+            M3 => bus_write(self.basic.hl(), self.state.bus_data.unwrap()),
             M4 => self.execute_m1(),
             _ => unreachable!(),
         }
     }
 
-    fn ld_a_deref_bc(&mut self) -> Option<BusOp> {
+    fn ld_a_deref_bc(&mut self) -> Option<BusActivity> {
         match self.run.m_cycle {
-            M2 => Some(BusOp::Read(self.basic.bc())),
+            M2 => bus_read(self.basic.bc()),
             M3 => {
                 self.basic.a = self.state.bus_data.unwrap();
                 self.execute_m1()
@@ -142,9 +142,9 @@ impl<'a> RunView<'a, InstructionExecutionState> {
         }
     }
 
-    fn ld_a_deref_de(&mut self) -> Option<BusOp> {
+    fn ld_a_deref_de(&mut self) -> Option<BusActivity> {
         match self.run.m_cycle {
-            M2 => Some(BusOp::Read(self.basic.de())),
+            M2 => bus_read(self.basic.de()),
             M3 => {
                 self.basic.a = self.state.bus_data.unwrap();
                 self.execute_m1()
@@ -153,9 +153,9 @@ impl<'a> RunView<'a, InstructionExecutionState> {
         }
     }
 
-    fn ld_a_deref_c(&mut self) -> Option<BusOp> {
+    fn ld_a_deref_c(&mut self) -> Option<BusActivity> {
         match self.run.m_cycle {
-            M2 => Some(BusOp::Read(u16::from_be_bytes([0xff, self.basic.c]))),
+            M2 => bus_read(u16::from_be_bytes([0xff, self.basic.c])),
             M3 => {
                 self.basic.a = self.state.bus_data.unwrap();
                 self.execute_m1()
@@ -164,24 +164,18 @@ impl<'a> RunView<'a, InstructionExecutionState> {
         }
     }
 
-    fn ld_deref_c_a(&mut self) -> Option<BusOp> {
+    fn ld_deref_c_a(&mut self) -> Option<BusActivity> {
         match self.run.m_cycle {
-            M2 => Some(BusOp::Write(
-                u16::from_be_bytes([0xff, self.basic.c]),
-                self.basic.a,
-            )),
+            M2 => bus_write(u16::from_be_bytes([0xff, self.basic.c]), self.basic.a),
             M3 => self.execute_m1(),
             _ => unreachable!(),
         }
     }
 
-    fn ld_a_deref_n(&mut self) -> Option<BusOp> {
+    fn ld_a_deref_n(&mut self) -> Option<BusActivity> {
         match self.run.m_cycle {
             M2 => self.read_immediate(),
-            M3 => Some(BusOp::Read(u16::from_be_bytes([
-                0xff,
-                self.state.bus_data.unwrap(),
-            ]))),
+            M3 => bus_read(u16::from_be_bytes([0xff, self.state.bus_data.unwrap()])),
             M4 => {
                 self.basic.a = self.state.bus_data.unwrap();
                 self.execute_m1()
@@ -190,29 +184,29 @@ impl<'a> RunView<'a, InstructionExecutionState> {
         }
     }
 
-    fn ld_deref_n_a(&mut self) -> Option<BusOp> {
+    fn ld_deref_n_a(&mut self) -> Option<BusActivity> {
         match self.run.m_cycle {
             M2 => self.read_immediate(),
-            M3 => Some(BusOp::Write(
+            M3 => bus_write(
                 u16::from_be_bytes([0xff, self.state.bus_data.unwrap()]),
                 self.basic.a,
-            )),
+            ),
             M4 => self.execute_m1(),
             _ => unreachable!(),
         }
     }
 
-    fn ld_a_deref_nn(&mut self) -> Option<BusOp> {
+    fn ld_a_deref_nn(&mut self) -> Option<BusActivity> {
         match self.run.m_cycle {
             M2 => self.read_immediate(),
             M3 => {
                 self.state.data = self.state.bus_data.unwrap();
                 self.read_immediate()
             }
-            M4 => Some(BusOp::Read(u16::from_be_bytes([
+            M4 => bus_read(u16::from_be_bytes([
                 self.state.bus_data.unwrap(),
                 self.state.data,
-            ]))),
+            ])),
             M5 => {
                 self.basic.a = self.state.bus_data.unwrap();
                 self.execute_m1()
@@ -221,30 +215,30 @@ impl<'a> RunView<'a, InstructionExecutionState> {
         }
     }
 
-    fn ld_deref_nn_a(&mut self) -> Option<BusOp> {
+    fn ld_deref_nn_a(&mut self) -> Option<BusActivity> {
         match self.run.m_cycle {
             M2 => self.read_immediate(),
             M3 => {
                 self.state.data = self.state.bus_data.unwrap();
                 self.read_immediate()
             }
-            M4 => Some(BusOp::Write(
+            M4 => bus_write(
                 u16::from_be_bytes([self.state.bus_data.unwrap(), self.state.data]),
                 self.basic.a,
-            )),
+            ),
             M5 => self.execute_m1(),
             _ => unreachable!(),
         }
     }
 
-    fn ld_a_deref_hli(&mut self) -> Option<BusOp> {
+    fn ld_a_deref_hli(&mut self) -> Option<BusActivity> {
         match self.run.m_cycle {
             M2 => {
                 let hl = self.basic.hl();
                 let incremented_hl = hl + 1;
                 self.basic.h = high_byte(incremented_hl);
                 self.basic.l = low_byte(incremented_hl);
-                Some(BusOp::Read(hl))
+                bus_read(hl)
             }
             M3 => {
                 self.basic.a = self.state.bus_data.unwrap();
@@ -254,14 +248,14 @@ impl<'a> RunView<'a, InstructionExecutionState> {
         }
     }
 
-    fn ld_a_deref_hld(&mut self) -> Option<BusOp> {
+    fn ld_a_deref_hld(&mut self) -> Option<BusActivity> {
         match self.run.m_cycle {
             M2 => {
                 let hl = self.basic.hl();
                 let decremented_hl = hl - 1;
                 self.basic.h = high_byte(decremented_hl);
                 self.basic.l = low_byte(decremented_hl);
-                Some(BusOp::Read(hl))
+                bus_read(hl)
             }
             M3 => {
                 self.basic.a = self.state.bus_data.unwrap();
@@ -271,51 +265,51 @@ impl<'a> RunView<'a, InstructionExecutionState> {
         }
     }
 
-    fn ld_deref_bc_a(&mut self) -> Option<BusOp> {
+    fn ld_deref_bc_a(&mut self) -> Option<BusActivity> {
         match self.run.m_cycle {
-            M2 => Some(BusOp::Write(self.basic.bc(), self.basic.a)),
+            M2 => bus_write(self.basic.bc(), self.basic.a),
             M3 => self.execute_m1(),
             _ => unreachable!(),
         }
     }
 
-    fn ld_deref_de_a(&mut self) -> Option<BusOp> {
+    fn ld_deref_de_a(&mut self) -> Option<BusActivity> {
         match self.run.m_cycle {
-            M2 => Some(BusOp::Write(self.basic.de(), self.basic.a)),
+            M2 => bus_write(self.basic.de(), self.basic.a),
             M3 => self.execute_m1(),
             _ => unreachable!(),
         }
     }
 
-    fn ld_deref_hli_a(&mut self) -> Option<BusOp> {
+    fn ld_deref_hli_a(&mut self) -> Option<BusActivity> {
         match self.run.m_cycle {
             M2 => {
                 let hl = self.basic.hl();
                 let incremented_hl = hl.wrapping_add(1);
                 self.basic.h = high_byte(incremented_hl);
                 self.basic.l = low_byte(incremented_hl);
-                Some(BusOp::Write(hl, self.basic.a))
+                bus_write(hl, self.basic.a)
             }
             M3 => self.execute_m1(),
             _ => unreachable!(),
         }
     }
 
-    fn ld_deref_hld_a(&mut self) -> Option<BusOp> {
+    fn ld_deref_hld_a(&mut self) -> Option<BusActivity> {
         match self.run.m_cycle {
             M2 => {
                 let hl = self.basic.hl();
                 let decremented_hl = hl - 1;
                 self.basic.h = high_byte(decremented_hl);
                 self.basic.l = low_byte(decremented_hl);
-                Some(BusOp::Write(hl, self.basic.a))
+                bus_write(hl, self.basic.a)
             }
             M3 => self.execute_m1(),
             _ => unreachable!(),
         }
     }
 
-    fn ld_dd_nn(&mut self, dd: Dd) -> Option<BusOp> {
+    fn ld_dd_nn(&mut self, dd: Dd) -> Option<BusActivity> {
         match self.run.m_cycle {
             M2 => self.read_immediate(),
             M3 => {
@@ -330,7 +324,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
         }
     }
 
-    fn ld_sp_hl(&mut self) -> Option<BusOp> {
+    fn ld_sp_hl(&mut self) -> Option<BusActivity> {
         match self.run.m_cycle {
             M2 => {
                 self.basic.sp = self.basic.hl();
@@ -341,7 +335,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
         }
     }
 
-    fn push_qq(&mut self, qq: Qq) -> Option<BusOp> {
+    fn push_qq(&mut self, qq: Qq) -> Option<BusActivity> {
         match self.run.m_cycle {
             M2 => None,
             M3 => self.push_byte(self.basic.read(qq.high())),
@@ -351,7 +345,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
         }
     }
 
-    fn pop_qq(&mut self, qq: Qq) -> Option<BusOp> {
+    fn pop_qq(&mut self, qq: Qq) -> Option<BusActivity> {
         match self.run.m_cycle {
             M2 => self.pop_byte(),
             M3 => {
@@ -366,7 +360,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
         }
     }
 
-    fn ldhl_sp_e(&mut self) -> Option<BusOp> {
+    fn ldhl_sp_e(&mut self) -> Option<BusActivity> {
         match self.run.m_cycle {
             M2 => self.read_immediate(),
             M3 => {
@@ -384,7 +378,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
         }
     }
 
-    fn ld_deref_nn_sp(&mut self) -> Option<BusOp> {
+    fn ld_deref_nn_sp(&mut self) -> Option<BusActivity> {
         match self.run.m_cycle {
             M2 => self.read_immediate(),
             M3 => {
@@ -393,15 +387,15 @@ impl<'a> RunView<'a, InstructionExecutionState> {
             }
             M4 => {
                 self.state.addr |= (self.state.bus_data.unwrap() as u16) << 8;
-                Some(BusOp::Write(self.state.addr, low_byte(self.basic.sp)))
+                bus_write(self.state.addr, low_byte(self.basic.sp))
             }
-            M5 => Some(BusOp::Write(self.state.addr + 1, high_byte(self.basic.sp))),
+            M5 => bus_write(self.state.addr + 1, high_byte(self.basic.sp)),
             M6 => self.execute_m1(),
             _ => unreachable!(),
         }
     }
 
-    fn alu_op_r(&mut self, op: AluOp, r: R) -> Option<BusOp> {
+    fn alu_op_r(&mut self, op: AluOp, r: R) -> Option<BusActivity> {
         match self.run.m_cycle {
             M2 => {
                 let (result, flags) = self.alu_op(op, self.basic.a, self.basic.read(r));
@@ -413,7 +407,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
         }
     }
 
-    fn alu_op_n(&mut self, op: AluOp) -> Option<BusOp> {
+    fn alu_op_n(&mut self, op: AluOp) -> Option<BusActivity> {
         match self.run.m_cycle {
             M2 => self.read_immediate(),
             M3 => {
@@ -426,9 +420,9 @@ impl<'a> RunView<'a, InstructionExecutionState> {
         }
     }
 
-    fn alu_op_deref_hl(&mut self, op: AluOp) -> Option<BusOp> {
+    fn alu_op_deref_hl(&mut self, op: AluOp) -> Option<BusActivity> {
         match self.run.m_cycle {
-            M2 => Some(BusOp::Read(self.basic.hl())),
+            M2 => bus_read(self.basic.hl()),
             M3 => {
                 let (result, flags) = self.alu_op(op, self.basic.a, self.state.bus_data.unwrap());
                 self.basic.a = result;
@@ -439,7 +433,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
         }
     }
 
-    fn inc_r(&mut self, r: R) -> Option<BusOp> {
+    fn inc_r(&mut self, r: R) -> Option<BusActivity> {
         match self.run.m_cycle {
             M2 => {
                 let (result, flags) = add(self.basic.read(r), 1, false);
@@ -453,22 +447,22 @@ impl<'a> RunView<'a, InstructionExecutionState> {
         }
     }
 
-    fn inc_deref_hl(&mut self) -> Option<BusOp> {
+    fn inc_deref_hl(&mut self) -> Option<BusActivity> {
         match self.run.m_cycle {
-            M2 => Some(BusOp::Read(self.basic.hl())),
+            M2 => bus_read(self.basic.hl()),
             M3 => {
                 let (result, flags) = add(self.state.bus_data.unwrap(), 1, false);
                 self.basic.f.z = flags.z;
                 self.basic.f.n = flags.n;
                 self.basic.f.h = flags.h;
-                Some(BusOp::Write(self.basic.hl(), result))
+                bus_write(self.basic.hl(), result)
             }
             M4 => self.execute_m1(),
             _ => unreachable!(),
         }
     }
 
-    fn jp_nn(&mut self) -> Option<BusOp> {
+    fn jp_nn(&mut self) -> Option<BusActivity> {
         match self.run.m_cycle {
             M2 => self.read_immediate(),
             M3 => {
@@ -484,7 +478,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
         }
     }
 
-    fn jp_cc_nn(&mut self, cc: Cc) -> Option<BusOp> {
+    fn jp_cc_nn(&mut self, cc: Cc) -> Option<BusActivity> {
         match self.run.m_cycle {
             M2 => self.read_immediate(),
             M3 => {
@@ -505,7 +499,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
         }
     }
 
-    fn jr_e(&mut self) -> Option<BusOp> {
+    fn jr_e(&mut self) -> Option<BusActivity> {
         match self.run.m_cycle {
             M2 => self.read_immediate(),
             M3 => {
@@ -518,7 +512,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
         }
     }
 
-    fn jp_deref_hl(&mut self) -> Option<BusOp> {
+    fn jp_deref_hl(&mut self) -> Option<BusActivity> {
         match self.run.m_cycle {
             M2 => {
                 self.basic.pc = self.basic.hl();
@@ -528,7 +522,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
         }
     }
 
-    fn ret(&mut self) -> Option<BusOp> {
+    fn ret(&mut self) -> Option<BusActivity> {
         match self.run.m_cycle {
             M2 => self.pop_byte(),
             M3 => {
@@ -544,26 +538,29 @@ impl<'a> RunView<'a, InstructionExecutionState> {
         }
     }
 
-    fn execute_m1(&mut self) -> Option<BusOp> {
+    fn execute_m1(&mut self) -> Option<BusActivity> {
         self.state.m1 = true;
-        Some(BusOp::Read(self.basic.pc))
+        bus_read(self.basic.pc)
     }
 
-    fn read_immediate(&mut self) -> CpuOutput {
-        let pc = self.basic.pc;
+    fn read_immediate(&mut self) -> Option<BusActivity> {
+        let addr = self.basic.pc;
         self.basic.pc += 1;
-        Some(BusOp::Read(pc))
+        bus_read(addr)
     }
 
-    fn push_byte(&mut self, data: u8) -> CpuOutput {
+    fn push_byte(&mut self, data: u8) -> Option<BusActivity> {
         self.basic.sp -= 1;
-        Some(BusOp::Write(self.basic.sp, data))
+        Some(BusActivity {
+            addr: self.basic.sp,
+            op: Some(BusOp::Write(data)),
+        })
     }
 
-    fn pop_byte(&mut self) -> CpuOutput {
-        let sp = self.basic.sp;
+    fn pop_byte(&mut self) -> Option<BusActivity> {
+        let addr = self.basic.sp;
         self.basic.sp += 1;
-        Some(BusOp::Read(sp))
+        bus_read(addr)
     }
 
     fn alu_op(&self, op: AluOp, lhs: u8, rhs: u8) -> (u8, Flags) {

@@ -41,7 +41,7 @@ fn ld_deref_0xffff_sets_5_lower_bits_of_ie() {
     cpu.test_simple_instr(
         &[0xe0, 0xff],
         &[
-            (Input::with_data(None), Some(BusOp::Write(0xffff, 0xff))),
+            (Input::with_data(None), bus_write(0xffff, 0xff)),
             (Input::with_data(None), None),
         ],
     );
@@ -55,7 +55,7 @@ impl Cpu {
         let r#if = 0x01 << n;
         let input = Input { data: None, r#if };
         self.data.ime = true;
-        assert_eq!(self.step(&input), Some(BusOp::Read(pc)));
+        assert_eq!(self.step(&input), bus_read(pc));
         assert_eq!(
             self.step(&Input {
                 data: Some(0x00),
@@ -67,24 +67,18 @@ impl Cpu {
         assert_eq!(self.step(&input), None);
         assert_eq!(self.step(&input), None);
         assert_eq!(self.step(&input), None);
-        assert_eq!(self.step(&input), Some(BusOp::Write(sp - 1, high_byte(pc))));
+        assert_eq!(self.step(&input), bus_write(sp - 1, high_byte(pc)));
         assert_eq!(self.step(&input), None);
-        assert_eq!(self.step(&input), Some(BusOp::Write(sp - 2, low_byte(pc))));
+        assert_eq!(self.step(&input), bus_write(sp - 2, low_byte(pc)));
         assert_eq!(self.step(&input), None);
         assert!(!self.data.ime);
-        assert_eq!(
-            self.step(&Input::with_data(None)),
-            Some(BusOp::Read(0x0040 + 8 * n))
-        );
+        assert_eq!(self.step(&Input::with_data(None)), bus_read(0x0040 + 8 * n));
         assert_eq!(self.step(&Input::with_data(Some(0x00))), None);
     }
 
     fn assert_no_interrupt_dispatch(&mut self, r#if: u8) {
         let pc = self.data.pc;
-        assert_eq!(
-            self.step(&Input { data: None, r#if }),
-            Some(BusOp::Read(pc))
-        );
+        assert_eq!(self.step(&Input { data: None, r#if }), bus_read(pc));
         assert_eq!(
             self.step(&Input {
                 data: Some(0x00),
@@ -92,10 +86,7 @@ impl Cpu {
             }),
             None
         );
-        assert_eq!(
-            self.step(&Input { data: None, r#if }),
-            Some(BusOp::Read(pc + 1))
-        );
+        assert_eq!(self.step(&Input { data: None, r#if }), bus_read(pc + 1));
         assert_eq!(
             self.step(&Input {
                 data: Some(0x00),

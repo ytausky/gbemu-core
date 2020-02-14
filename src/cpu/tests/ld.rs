@@ -346,7 +346,7 @@ fn test_ld_r_deref_hl(dest: R) {
     cpu.test_simple_instr(
         &encode_ld_r_deref_hl(dest),
         &[
-            (Input::with_data(None), Some(BusOp::Read(0x1234))),
+            (Input::with_data(None), bus_read(0x1234)),
             (Input::with_data(Some(data)), None),
         ],
     );
@@ -401,10 +401,7 @@ fn test_ld_deref_hl_r(src: R) {
     cpu.test_simple_instr(
         &encode_ld_deref_hl_r(src),
         &[
-            (
-                Input::with_data(None),
-                Some(BusOp::Write(cpu.data.hl(), data)),
-            ),
+            (Input::with_data(None), bus_write(cpu.data.hl(), data)),
             (Input::with_data(None), None),
         ],
     );
@@ -423,7 +420,7 @@ fn ld_deref_hl_n() {
     cpu.test_simple_instr(
         &encode_ld_deref_hl_n(n),
         &[
-            (Input::with_data(None), Some(BusOp::Write(0x1234, n))),
+            (Input::with_data(None), bus_write(0x1234, n)),
             (Input::with_data(None), None),
         ],
     )
@@ -442,7 +439,7 @@ fn ld_a_deref_bc() {
     cpu.test_simple_instr(
         &[0b00_001_010],
         &[
-            (Input::with_data(None), Some(BusOp::Read(0x1234))),
+            (Input::with_data(None), bus_read(0x1234)),
             (Input::with_data(Some(value)), None),
         ],
     );
@@ -458,7 +455,7 @@ fn ld_a_deref_de() {
     cpu.test_simple_instr(
         &[0b00_011_010],
         &[
-            (Input::with_data(None), Some(BusOp::Read(0x1234))),
+            (Input::with_data(None), bus_read(0x1234)),
             (Input::with_data(Some(value)), None),
         ],
     );
@@ -473,7 +470,7 @@ fn ld_a_deref_c() {
     cpu.test_simple_instr(
         &[0b11_110_010],
         &[
-            (Input::with_data(None), Some(BusOp::Read(0xff95))),
+            (Input::with_data(None), bus_read(0xff95)),
             (Input::with_data(Some(value)), None),
         ],
     );
@@ -489,7 +486,7 @@ fn ld_deref_c_a() {
     cpu.test_simple_instr(
         &[0b11_100_010],
         &[
-            (Input::with_data(None), Some(BusOp::Write(0xff9f, value))),
+            (Input::with_data(None), bus_write(0xff9f, value)),
             (Input::with_data(None), None),
         ],
     )
@@ -502,7 +499,7 @@ fn ld_a_deref_n() {
     cpu.test_simple_instr(
         &[0b11_110_000, 0x34],
         &[
-            (Input::with_data(None), Some(BusOp::Read(0xff34))),
+            (Input::with_data(None), bus_read(0xff34)),
             (Input::with_data(Some(value)), None),
         ],
     );
@@ -517,7 +514,7 @@ fn ld_deref_n_a() {
     cpu.test_simple_instr(
         &[0b11_100_000, 0x34],
         &[
-            (Input::with_data(None), Some(BusOp::Write(0xff34, value))),
+            (Input::with_data(None), bus_write(0xff34, value)),
             (Input::with_data(None), None),
         ],
     )
@@ -530,7 +527,7 @@ fn ld_a_deref_nn() {
     cpu.test_simple_instr(
         &[0b11_111_010, 0x00, 0x80],
         &[
-            (Input::with_data(None), Some(BusOp::Read(0x8000))),
+            (Input::with_data(None), bus_read(0x8000)),
             (Input::with_data(Some(value)), None),
         ],
     );
@@ -545,7 +542,7 @@ fn ld_deref_nn_a() {
     cpu.test_simple_instr(
         &[0b11_101_010, 0x00, 0x80],
         &[
-            (Input::with_data(None), Some(BusOp::Write(0x8000, value))),
+            (Input::with_data(None), bus_write(0x8000, value)),
             (Input::with_data(None), None),
         ],
     )
@@ -560,7 +557,7 @@ fn ld_a_deref_hli() {
     cpu.test_simple_instr(
         &[0b00_101_010],
         &[
-            (Input::with_data(None), Some(BusOp::Read(0x01ff))),
+            (Input::with_data(None), bus_read(0x01ff)),
             (Input::with_data(Some(value)), None),
         ],
     );
@@ -577,7 +574,7 @@ fn ld_a_deref_hld() {
     cpu.test_simple_instr(
         &[0b00_111_010],
         &[
-            (Input::with_data(None), Some(BusOp::Read(0x8a5c))),
+            (Input::with_data(None), bus_read(0x8a5c)),
             (Input::with_data(Some(value)), None),
         ],
     );
@@ -594,7 +591,7 @@ fn ld_deref_bc_a() {
     cpu.test_simple_instr(
         &[0b00_000_010],
         &[
-            (Input::with_data(None), Some(BusOp::Write(0x0205, 0x3f))),
+            (Input::with_data(None), bus_write(0x0205, 0x3f)),
             (Input::with_data(None), None),
         ],
     )
@@ -608,7 +605,7 @@ fn ld_deref_de_a() {
     cpu.test_simple_instr(
         &[0b00_010_010],
         &[
-            (Input::with_data(None), Some(BusOp::Write(0x0205, 0x00))),
+            (Input::with_data(None), bus_write(0x0205, 0x00)),
             (Input::with_data(None), None),
         ],
     )
@@ -623,7 +620,7 @@ fn ld_deref_hli_a() {
     cpu.test_simple_instr(
         &[0b00_100_010],
         &[
-            (Input::with_data(None), Some(BusOp::Write(0xffff, 0x56))),
+            (Input::with_data(None), bus_write(0xffff, 0x56)),
             (Input::with_data(None), None),
         ],
     );
@@ -639,7 +636,7 @@ fn ld_deref_hld_a() {
     cpu.test_simple_instr(
         &[0b00_110_010],
         &[
-            (Input::with_data(None), Some(BusOp::Write(0x4000, 0x05))),
+            (Input::with_data(None), bus_write(0x4000, 0x05)),
             (Input::with_data(None), None),
         ],
     );
@@ -729,12 +726,12 @@ fn test_push_qq(qq: Qq) {
             (Input::with_data(None), None),
             (
                 Input::with_data(None),
-                Some(BusOp::Write(0xfffd, cpu.data.read(qq.high()))),
+                bus_write(0xfffd, cpu.data.read(qq.high())),
             ),
             (Input::with_data(None), None),
             (
                 Input::with_data(None),
-                Some(BusOp::Write(0xfffc, cpu.data.read(qq.low()))),
+                bus_write(0xfffc, cpu.data.read(qq.low())),
             ),
             (Input::with_data(None), None),
         ],
@@ -772,9 +769,9 @@ fn test_pop_qq(qq: Qq) {
     cpu.test_simple_instr(
         &encode_pop_qq(qq),
         &[
-            (Input::with_data(None), Some(BusOp::Read(0xfffc))),
+            (Input::with_data(None), bus_read(0xfffc)),
             (Input::with_data(Some(0x50)), None),
-            (Input::with_data(None), Some(BusOp::Read(0xfffd))),
+            (Input::with_data(None), bus_read(0xfffd)),
             (Input::with_data(Some(0x3c)), None),
         ],
     );
@@ -874,12 +871,12 @@ fn ld_deref_nn_sp() {
         &[
             (
                 Input::with_data(None),
-                Some(BusOp::Write(0xc100, low_byte(cpu.data.sp))),
+                bus_write(0xc100, low_byte(cpu.data.sp)),
             ),
             (Input::with_data(None), None),
             (
                 Input::with_data(None),
-                Some(BusOp::Write(0xc101, high_byte(cpu.data.sp))),
+                bus_write(0xc101, high_byte(cpu.data.sp)),
             ),
             (Input::with_data(None), None),
         ],

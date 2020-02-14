@@ -28,7 +28,7 @@ fn test_addition_deref_hl(opcode: &[u8], test_case: &AluTestCase) {
     cpu.test_simple_instr(
         opcode,
         &[
-            (Input::with_data(None), Some(BusOp::Read(cpu.data.hl()))),
+            (Input::with_data(None), bus_read(cpu.data.hl())),
             (Input::with_data(Some(test_case.input.y)), None),
         ],
     );
@@ -436,9 +436,9 @@ fn inc_deref_hl() {
     cpu.test_simple_instr(
         &[0b00_110_100],
         &[
-            (Input::with_data(None), Some(BusOp::Read(0x1234))),
+            (Input::with_data(None), bus_read(0x1234)),
             (Input::with_data(Some(0x01)), None),
-            (Input::with_data(None), Some(BusOp::Write(0x1234, 0x02))),
+            (Input::with_data(None), bus_write(0x1234, 0x02)),
             (Input::with_data(None), None),
         ],
     );

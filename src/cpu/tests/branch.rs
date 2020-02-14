@@ -8,7 +8,7 @@ fn jp_nn() {
         &[
             (Input::with_data(None), None),
             (Input::with_data(None), None),
-            (Input::with_data(None), Some(BusOp::Read(0x1234))),
+            (Input::with_data(None), bus_read(0x1234)),
             (Input::with_data(Some(0x00)), None),
         ],
     )
@@ -22,7 +22,7 @@ fn jp_nz_nn_branching() {
         &[
             (Input::with_data(None), None),
             (Input::with_data(None), None),
-            (Input::with_data(None), Some(BusOp::Read(0x1234))),
+            (Input::with_data(None), bus_read(0x1234)),
             (Input::with_data(Some(0x00)), None),
         ],
     )
@@ -44,7 +44,7 @@ fn jp_z_nn_branching() {
         &[
             (Input::with_data(None), None),
             (Input::with_data(None), None),
-            (Input::with_data(None), Some(BusOp::Read(0x1234))),
+            (Input::with_data(None), bus_read(0x1234)),
             (Input::with_data(Some(0x00)), None),
         ],
     )
@@ -64,7 +64,7 @@ fn jp_nc_nn_branching() {
         &[
             (Input::with_data(None), None),
             (Input::with_data(None), None),
-            (Input::with_data(None), Some(BusOp::Read(0x1234))),
+            (Input::with_data(None), bus_read(0x1234)),
             (Input::with_data(Some(0x00)), None),
         ],
     )
@@ -86,7 +86,7 @@ fn jp_c_nn_branching() {
         &[
             (Input::with_data(None), None),
             (Input::with_data(None), None),
-            (Input::with_data(None), Some(BusOp::Read(0x1234))),
+            (Input::with_data(None), bus_read(0x1234)),
             (Input::with_data(Some(0x00)), None),
         ],
     )
@@ -104,15 +104,15 @@ fn jp_c_nn_non_branching_then_ret() {
     cpu.test_opcode(
         &[0xda, 0x34, 0x12],
         &[
-            (Input::with_data(None), Some(BusOp::Read(0x0003))),
+            (Input::with_data(None), bus_read(0x0003)),
             (Input::with_data(Some(RET)), None),
-            (Input::with_data(None), Some(BusOp::Read(0x0000))),
+            (Input::with_data(None), bus_read(0x0000)),
             (Input::with_data(Some(0x34)), None),
-            (Input::with_data(None), Some(BusOp::Read(0x0001))),
+            (Input::with_data(None), bus_read(0x0001)),
             (Input::with_data(Some(0x12)), None),
             (Input::with_data(None), None),
             (Input::with_data(None), None),
-            (Input::with_data(None), Some(BusOp::Read(0x1234))),
+            (Input::with_data(None), bus_read(0x1234)),
             (Input::with_data(Some(0x00)), None),
         ],
     )
@@ -127,7 +127,7 @@ fn jr_e_min_value() {
         &[
             (Input::with_data(None), None),
             (Input::with_data(None), None),
-            (Input::with_data(None), Some(BusOp::Read(0x0f82))),
+            (Input::with_data(None), bus_read(0x0f82)),
             (Input::with_data(Some(0x00)), None),
         ],
     )
@@ -142,7 +142,7 @@ fn jr_e_with_carry() {
         &[
             (Input::with_data(None), None),
             (Input::with_data(None), None),
-            (Input::with_data(None), Some(BusOp::Read(0x1100))),
+            (Input::with_data(None), bus_read(0x1100)),
             (Input::with_data(Some(0x00)), None),
         ],
     )
@@ -156,7 +156,7 @@ fn jp_deref_hl() {
     cpu.test_opcode(
         &[0xe9],
         &[
-            (Input::with_data(None), Some(BusOp::Read(0x1234))),
+            (Input::with_data(None), bus_read(0x1234)),
             (Input::with_data(Some(0x00)), None),
         ],
     );

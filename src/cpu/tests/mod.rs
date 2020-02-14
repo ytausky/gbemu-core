@@ -48,14 +48,14 @@ fn ret() {
     cpu.test_opcode(
         &[RET],
         &[
-            (Input::with_data(None), Some(BusOp::Read(0x1234))),
+            (Input::with_data(None), bus_read(0x1234)),
             (Input::with_data(Some(0x78)), None),
-            (Input::with_data(None), Some(BusOp::Read(0x1235))),
+            (Input::with_data(None), bus_read(0x1235)),
             (Input::with_data(Some(0x56)), None),
             // M3 doesn't do any bus operation (according to LIJI32 and gekkio)
             (Input::with_data(None), None),
             (Input::with_data(None), None),
-            (Input::with_data(None), Some(BusOp::Read(0x5678))),
+            (Input::with_data(None), bus_read(0x5678)),
             (Input::with_data(Some(0x00)), None),
         ],
     );
@@ -69,21 +69,21 @@ fn two_rets() {
     cpu.test_opcode(
         &[RET],
         &[
-            (Input::with_data(None), Some(BusOp::Read(0x1234))),
+            (Input::with_data(None), bus_read(0x1234)),
             (Input::with_data(Some(0x78)), None),
-            (Input::with_data(None), Some(BusOp::Read(0x1235))),
+            (Input::with_data(None), bus_read(0x1235)),
             (Input::with_data(Some(0x56)), None),
             (Input::with_data(None), None),
             (Input::with_data(None), None),
-            (Input::with_data(None), Some(BusOp::Read(0x5678))),
+            (Input::with_data(None), bus_read(0x5678)),
             (Input::with_data(Some(RET)), None),
-            (Input::with_data(None), Some(BusOp::Read(0x1236))),
+            (Input::with_data(None), bus_read(0x1236)),
             (Input::with_data(Some(0xbc)), None),
-            (Input::with_data(None), Some(BusOp::Read(0x1237))),
+            (Input::with_data(None), bus_read(0x1237)),
             (Input::with_data(Some(0x9a)), None),
             (Input::with_data(None), None),
             (Input::with_data(None), None),
-            (Input::with_data(None), Some(BusOp::Read(0x9abc))),
+            (Input::with_data(None), bus_read(0x9abc)),
             (Input::with_data(Some(0x00)), None),
         ],
     );
@@ -103,7 +103,7 @@ impl Cpu {
             .chain(vec![
                 (
                     Input::with_data(None),
-                    Some(BusOp::Read(self.data.pc + opcode.len() as u16)),
+                    bus_read(self.data.pc + opcode.len() as u16),
                 ),
                 (Input::with_data(Some(0x00)), None),
             ])
@@ -117,10 +117,7 @@ impl Cpu {
     {
         let pc = self.data.pc;
         for (i, byte) in opcode.iter().enumerate() {
-            assert_eq!(
-                self.step(&Input::with_data(None)),
-                Some(BusOp::Read(pc + i as u16))
-            );
+            assert_eq!(self.step(&Input::with_data(None)), bus_read(pc + i as u16));
             assert_eq!(self.step(&Input::with_data(Some(*byte))), None);
         }
         for (input, output) in steps {
