@@ -580,7 +580,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
         if addr == 0xffff {
             self.state.read_ie = true;
         }
-        bus_read(addr)
+        Some(bus_read(addr))
     }
 
     fn alu_op(&self, op: AluOp, lhs: u8, rhs: u8) -> (u8, Flags) {

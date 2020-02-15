@@ -187,7 +187,7 @@ impl<'a, T> RunView<'a, T> {
         if addr == 0xffff {
             self.basic.ie = data & 0x1f
         }
-        bus_write(addr, data)
+        Some(bus_write(addr, data))
     }
 }
 
@@ -434,18 +434,18 @@ pub enum BusOp {
     Write(u8),
 }
 
-fn bus_read(addr: u16) -> Option<BusActivity> {
-    Some(BusActivity {
+fn bus_read(addr: u16) -> BusActivity {
+    BusActivity {
         addr,
         op: Some(BusOp::Read),
-    })
+    }
 }
 
-fn bus_write(addr: u16, data: u8) -> Option<BusActivity> {
-    Some(BusActivity {
+fn bus_write(addr: u16, data: u8) -> BusActivity {
+    BusActivity {
         addr,
         op: Some(BusOp::Write(data)),
-    })
+    }
 }
 
 enum RegSelect {

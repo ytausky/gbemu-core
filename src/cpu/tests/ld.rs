@@ -345,7 +345,10 @@ fn test_ld_r_deref_hl(dest: R) {
     cpu.data.l = 0x34;
     cpu.test_simple_instr(
         &encode_ld_r_deref_hl(dest),
-        &[(input!(), bus_read(0x1234)), (input!(data: data), None)],
+        &[
+            (input!(), output!(bus: bus_read(0x1234))),
+            (input!(data: data), output!()),
+        ],
     );
     assert_eq!(cpu.data.read(dest), data)
 }
@@ -397,7 +400,10 @@ fn test_ld_deref_hl_r(src: R) {
     cpu.data.write(src, data);
     cpu.test_simple_instr(
         &encode_ld_deref_hl_r(src),
-        &[(input!(), bus_write(cpu.data.hl(), data)), (input!(), None)],
+        &[
+            (input!(), output!(bus: bus_write(cpu.data.hl(), data))),
+            (input!(), output!()),
+        ],
     );
 }
 
@@ -413,7 +419,10 @@ fn ld_deref_hl_n() {
     let n = 0x42;
     cpu.test_simple_instr(
         &encode_ld_deref_hl_n(n),
-        &[(input!(), bus_write(0x1234, n)), (input!(), None)],
+        &[
+            (input!(), output!(bus: bus_write(0x1234, n))),
+            (input!(), output!()),
+        ],
     )
 }
 
@@ -429,7 +438,10 @@ fn ld_a_deref_bc() {
     let value = 0x42;
     cpu.test_simple_instr(
         &[0b00_001_010],
-        &[(input!(), bus_read(0x1234)), (input!(data: value), None)],
+        &[
+            (input!(), output!(bus: bus_read(0x1234))),
+            (input!(data: value), output!()),
+        ],
     );
     assert_eq!(cpu.data.a, value)
 }
@@ -442,7 +454,10 @@ fn ld_a_deref_de() {
     let value = 0x5f;
     cpu.test_simple_instr(
         &[0b00_011_010],
-        &[(input!(), bus_read(0x1234)), (input!(data: value), None)],
+        &[
+            (input!(), output!(bus: bus_read(0x1234))),
+            (input!(data: value), output!()),
+        ],
     );
     assert_eq!(cpu.data.a, value)
 }
@@ -454,7 +469,10 @@ fn ld_a_deref_c() {
     let value = 0x42;
     cpu.test_simple_instr(
         &[0b11_110_010],
-        &[(input!(), bus_read(0xff95)), (input!(data: value), None)],
+        &[
+            (input!(), output!(bus: bus_read(0xff95))),
+            (input!(data: value), output!()),
+        ],
     );
     assert_eq!(cpu.data.a, value)
 }
@@ -467,7 +485,10 @@ fn ld_deref_c_a() {
     cpu.data.c = 0x9f;
     cpu.test_simple_instr(
         &[0b11_100_010],
-        &[(input!(), bus_write(0xff9f, value)), (input!(), None)],
+        &[
+            (input!(), output!(bus: bus_write(0xff9f, value))),
+            (input!(), output!()),
+        ],
     )
 }
 
@@ -477,7 +498,10 @@ fn ld_a_deref_n() {
     let value = 0x42;
     cpu.test_simple_instr(
         &[0b11_110_000, 0x34],
-        &[(input!(), bus_read(0xff34)), (input!(data: value), None)],
+        &[
+            (input!(), output!(bus: bus_read(0xff34))),
+            (input!(data: value), output!()),
+        ],
     );
     assert_eq!(cpu.data.a, value)
 }
@@ -489,7 +513,10 @@ fn ld_deref_n_a() {
     cpu.data.a = value;
     cpu.test_simple_instr(
         &[0b11_100_000, 0x34],
-        &[(input!(), bus_write(0xff34, value)), (input!(), None)],
+        &[
+            (input!(), output!(bus: bus_write(0xff34, value))),
+            (input!(), output!()),
+        ],
     )
 }
 
@@ -499,7 +526,10 @@ fn ld_a_deref_nn() {
     let value = 0x42;
     cpu.test_simple_instr(
         &[0b11_111_010, 0x00, 0x80],
-        &[(input!(), bus_read(0x8000)), (input!(data: value), None)],
+        &[
+            (input!(), output!(bus: bus_read(0x8000))),
+            (input!(data: value), output!()),
+        ],
     );
     assert_eq!(cpu.data.a, value)
 }
@@ -511,7 +541,10 @@ fn ld_deref_nn_a() {
     cpu.data.a = value;
     cpu.test_simple_instr(
         &[0b11_101_010, 0x00, 0x80],
-        &[(input!(), bus_write(0x8000, value)), (input!(), None)],
+        &[
+            (input!(), output!(bus: bus_write(0x8000, value))),
+            (input!(), output!()),
+        ],
     )
 }
 
@@ -523,7 +556,10 @@ fn ld_a_deref_hli() {
     let value = 0x56;
     cpu.test_simple_instr(
         &[0b00_101_010],
-        &[(input!(), bus_read(0x01ff)), (input!(data: value), None)],
+        &[
+            (input!(), output!(bus: bus_read(0x01ff))),
+            (input!(data: value), output!()),
+        ],
     );
     assert_eq!(cpu.data.a, value);
     assert_eq!(cpu.data.hl(), 0x0200)
@@ -537,7 +573,10 @@ fn ld_a_deref_hld() {
     let value = 0x3c;
     cpu.test_simple_instr(
         &[0b00_111_010],
-        &[(input!(), bus_read(0x8a5c)), (input!(data: value), None)],
+        &[
+            (input!(), output!(bus: bus_read(0x8a5c))),
+            (input!(data: value), output!()),
+        ],
     );
     assert_eq!(cpu.data.a, value);
     assert_eq!(cpu.data.hl(), 0x8a5b)
@@ -551,7 +590,10 @@ fn ld_deref_bc_a() {
     cpu.data.c = 0x05;
     cpu.test_simple_instr(
         &[0b00_000_010],
-        &[(input!(), bus_write(0x0205, 0x3f)), (input!(), None)],
+        &[
+            (input!(), output!(bus: bus_write(0x0205, 0x3f))),
+            (input!(), output!()),
+        ],
     )
 }
 
@@ -562,7 +604,10 @@ fn ld_deref_de_a() {
     cpu.data.e = 0x05;
     cpu.test_simple_instr(
         &[0b00_010_010],
-        &[(input!(), bus_write(0x0205, 0x00)), (input!(), None)],
+        &[
+            (input!(), output!(bus: bus_write(0x0205, 0x00))),
+            (input!(), output!()),
+        ],
     )
 }
 
@@ -574,7 +619,10 @@ fn ld_deref_hli_a() {
     cpu.data.l = 0xff;
     cpu.test_simple_instr(
         &[0b00_100_010],
-        &[(input!(), bus_write(0xffff, 0x56)), (input!(), None)],
+        &[
+            (input!(), output!(bus: bus_write(0xffff, 0x56))),
+            (input!(), output!()),
+        ],
     );
     assert_eq!(cpu.data.hl(), 0x0000)
 }
@@ -587,7 +635,10 @@ fn ld_deref_hld_a() {
     cpu.data.l = 0x00;
     cpu.test_simple_instr(
         &[0b00_110_010],
-        &[(input!(), bus_write(0x4000, 0x05)), (input!(), None)],
+        &[
+            (input!(), output!(bus: bus_write(0x4000, 0x05))),
+            (input!(), output!()),
+        ],
     );
     assert_eq!(cpu.data.hl(), 0x3fff)
 }
@@ -633,7 +684,10 @@ fn ld_sp_hl() {
     let mut cpu = Cpu::default();
     cpu.data.h = 0x12;
     cpu.data.l = 0x34;
-    cpu.test_simple_instr(&[0b11_111_001], &[(input!(), None), (input!(), None)]);
+    cpu.test_simple_instr(
+        &[0b11_111_001],
+        &[(input!(), output!()), (input!(), output!())],
+    );
     assert_eq!(cpu.data.sp, 0x1234)
 }
 
@@ -665,12 +719,18 @@ fn test_push_qq(qq: Qq) {
     cpu.test_simple_instr(
         &encode_push_qq(qq),
         &[
-            (input!(), None),
-            (input!(), None),
-            (input!(), bus_write(0xfffd, cpu.data.read(qq.high()))),
-            (input!(), None),
-            (input!(), bus_write(0xfffc, cpu.data.read(qq.low()))),
-            (input!(), None),
+            (input!(), output!()),
+            (input!(), output!()),
+            (
+                input!(),
+                output!(bus: bus_write(0xfffd, cpu.data.read(qq.high()))),
+            ),
+            (input!(), output!()),
+            (
+                input!(),
+                output!(bus: bus_write(0xfffc, cpu.data.read(qq.low()))),
+            ),
+            (input!(), output!()),
         ],
     );
     assert_eq!(cpu.data.sp, 0xfffc)
@@ -706,10 +766,10 @@ fn test_pop_qq(qq: Qq) {
     cpu.test_simple_instr(
         &encode_pop_qq(qq),
         &[
-            (input!(), bus_read(0xfffc)),
-            (input!(data: 0x50), None),
-            (input!(), bus_read(0xfffd)),
-            (input!(data: 0x3c), None),
+            (input!(), output!(bus: bus_read(0xfffc))),
+            (input!(data: 0x50), output!()),
+            (input!(), output!(bus: bus_read(0xfffd))),
+            (input!(data: 0x3c), output!()),
         ],
     );
     assert_eq!(cpu.data.read(qq.high()), 0x3c);
@@ -727,7 +787,7 @@ fn ldhl_sp_e() {
     cpu.data.sp = 0xfff8;
     cpu.test_simple_instr(
         &encode_ldhl_sp_e(0x02),
-        &[(input!(), None), (input!(), None)],
+        &[(input!(), output!()), (input!(), output!())],
     );
     assert_eq!(cpu.data.hl(), 0xfffa);
     assert_eq!(cpu.data.f, flags!())
@@ -736,7 +796,10 @@ fn ldhl_sp_e() {
 #[test]
 fn ldhl_sp_e_with_negative_e() {
     let mut cpu = Cpu::default();
-    cpu.test_simple_instr(&encode_ldhl_sp_e(-1), &[(input!(), None), (input!(), None)]);
+    cpu.test_simple_instr(
+        &encode_ldhl_sp_e(-1),
+        &[(input!(), output!()), (input!(), output!())],
+    );
     assert_eq!(cpu.data.hl(), 0xffff);
     assert_eq!(cpu.data.f, flags!())
 }
@@ -747,7 +810,7 @@ fn ldhl_sp_e_does_not_set_z() {
     cpu.data.sp = 0xffff;
     cpu.test_simple_instr(
         &encode_ldhl_sp_e(0x01),
-        &[(input!(), None), (input!(), None)],
+        &[(input!(), output!()), (input!(), output!())],
     );
     assert_eq!(cpu.data.hl(), 0x0000);
     assert_eq!(cpu.data.f, flags!(h, cy))
@@ -759,7 +822,7 @@ fn ldhl_sp_e_sets_h() {
     cpu.data.sp = 0xffe8;
     cpu.test_simple_instr(
         &encode_ldhl_sp_e(0x09),
-        &[(input!(), None), (input!(), None)],
+        &[(input!(), output!()), (input!(), output!())],
     );
     assert_eq!(cpu.data.hl(), 0xfff1);
     assert_eq!(cpu.data.f, flags!(h))
@@ -771,7 +834,7 @@ fn ldhl_sp_e_sets_cy() {
     cpu.data.sp = 0xfef1;
     cpu.test_simple_instr(
         &encode_ldhl_sp_e(0x10),
-        &[(input!(), None), (input!(), None)],
+        &[(input!(), output!()), (input!(), output!())],
     );
     assert_eq!(cpu.data.hl(), 0xff01);
     assert_eq!(cpu.data.f, flags!(cy))
@@ -788,10 +851,16 @@ fn ld_deref_nn_sp() {
     cpu.test_simple_instr(
         &encode_ld_deref_nn_sp(0xc100),
         &[
-            (input!(), bus_write(0xc100, low_byte(cpu.data.sp))),
-            (input!(), None),
-            (input!(), bus_write(0xc101, high_byte(cpu.data.sp))),
-            (input!(), None),
+            (
+                input!(),
+                output!(bus: bus_write(0xc100, low_byte(cpu.data.sp))),
+            ),
+            (input!(), output!()),
+            (
+                input!(),
+                output!(bus: bus_write(0xc101, high_byte(cpu.data.sp))),
+            ),
+            (input!(), output!()),
         ],
     )
 }

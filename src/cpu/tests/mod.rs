@@ -29,6 +29,25 @@ macro_rules! input_inner {
     ($input:ident,) => {};
 }
 
+macro_rules! output {
+    ($($tokens:tt)*) => {
+        {
+            #[allow(unused_mut)]
+            #[allow(unused_assignments)]
+            let mut output = None;
+            output_inner!(output, $($tokens)*);
+            output
+        }
+    };
+}
+
+macro_rules! output_inner {
+    ($output:ident, bus: $bus:expr) => {
+        $output = Some($bus);
+    };
+    ($output:ident,) => {};
+}
+
 mod alu;
 mod branch;
 mod interrupt;
@@ -77,15 +96,15 @@ fn ret() {
     cpu.test_opcode(
         &[RET],
         &[
-            (input!(), bus_read(0x1234)),
-            (input!(data: 0x78), None),
-            (input!(), bus_read(0x1235)),
-            (input!(data: 0x56), None),
+            (input!(), output!(bus: bus_read(0x1234))),
+            (input!(data: 0x78), output!()),
+            (input!(), output!(bus: bus_read(0x1235))),
+            (input!(data: 0x56), output!()),
             // M3 doesn't do any bus operation (according to LIJI32 and gekkio)
-            (input!(), None),
-            (input!(), None),
-            (input!(), bus_read(0x5678)),
-            (input!(data: 0x00), None),
+            (input!(), output!()),
+            (input!(), output!()),
+            (input!(), output!(bus: bus_read(0x5678))),
+            (input!(data: 0x00), output!()),
         ],
     );
     assert_eq!(cpu.data.sp, 0x1236)
@@ -98,22 +117,22 @@ fn two_rets() {
     cpu.test_opcode(
         &[RET],
         &[
-            (input!(), bus_read(0x1234)),
-            (input!(data: 0x78), None),
-            (input!(), bus_read(0x1235)),
-            (input!(data: 0x56), None),
-            (input!(), None),
-            (input!(), None),
-            (input!(), bus_read(0x5678)),
-            (input!(data: RET), None),
-            (input!(), bus_read(0x1236)),
-            (input!(data: 0xbc), None),
-            (input!(), bus_read(0x1237)),
-            (input!(data: 0x9a), None),
-            (input!(), None),
-            (input!(), None),
-            (input!(), bus_read(0x9abc)),
-            (input!(data: 0x00), None),
+            (input!(), output!(bus: bus_read(0x1234))),
+            (input!(data: 0x78), output!()),
+            (input!(), output!(bus: bus_read(0x1235))),
+            (input!(data: 0x56), output!()),
+            (input!(), output!()),
+            (input!(), output!()),
+            (input!(), output!(bus: bus_read(0x5678))),
+            (input!(data: RET), output!()),
+            (input!(), output!(bus: bus_read(0x1236))),
+            (input!(data: 0xbc), output!()),
+            (input!(), output!(bus: bus_read(0x1237))),
+            (input!(data: 0x9a), output!()),
+            (input!(), output!()),
+            (input!(), output!()),
+            (input!(), output!(bus: bus_read(0x9abc))),
+            (input!(data: 0x00), output!()),
         ],
     );
     assert_eq!(cpu.data.sp, 0x1238)
@@ -130,8 +149,11 @@ impl Cpu {
             .into_iter()
             .cloned()
             .chain(vec![
-                (input!(), bus_read(self.data.pc + opcode.len() as u16)),
-                (input!(data: 0x00), None),
+                (
+                    input!(),
+                    output!(bus: bus_read(self.data.pc + opcode.len() as u16)),
+                ),
+                (input!(data: 0x00), output!()),
             ])
             .collect();
         self.test_opcode(opcode, &steps);
@@ -143,8 +165,8 @@ impl Cpu {
     {
         let pc = self.data.pc;
         for (i, byte) in opcode.iter().enumerate() {
-            assert_eq!(self.step(&input!()), bus_read(pc + i as u16));
-            assert_eq!(self.step(&input!(data: *byte)), None);
+            assert_eq!(self.step(&input!()), output!(bus: bus_read(pc + i as u16)));
+            assert_eq!(self.step(&input!(data: *byte)), output!());
         }
         for (input, output) in steps {
             assert_eq!(self.step(input), *output)
