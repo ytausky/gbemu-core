@@ -45,6 +45,9 @@ macro_rules! output_inner {
     ($output:ident, bus: $bus:expr) => {
         $output.bus = Some($bus);
     };
+    ($output:ident, ack: $ack:expr) => {
+        $output.ack = $ack;
+    };
     ($output:ident,) => {};
 }
 

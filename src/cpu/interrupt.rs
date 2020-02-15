@@ -33,7 +33,13 @@ impl<'a> RunView<'a, InterruptDispatchState> {
                     self.basic.ime = false;
                     let n = (input.r#if & self.basic.ie).trailing_zeros();
                     self.basic.pc = 0x0040 + 8 * n as u16;
-                    (Some(ModeTransition::Instruction(NOP)), Default::default())
+                    (
+                        Some(ModeTransition::Instruction(NOP)),
+                        Output {
+                            bus: None,
+                            ack: 1 << n,
+                        },
+                    )
                 }
             },
             _ => unreachable!(),

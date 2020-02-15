@@ -152,7 +152,7 @@ impl Cpu {
             self.step(&input!(if: r#if)),
             output!(bus: bus_write(sp.wrapping_sub(2), low_byte(pc)))
         );
-        assert_eq!(self.step(&input!(if: r#if)), output!());
+        assert_eq!(self.step(&input!(if: r#if)), output!(ack: 1 << n));
         assert!(!self.data.ime);
         assert_eq!(self.step(&input!()), output!(bus: bus_read(0x0040 + 8 * n)));
         assert_eq!(self.step(&input!(data: 0x00)), output!());
