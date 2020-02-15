@@ -1,7 +1,7 @@
 use super::*;
 
 impl<'a> RunView<'a, InterruptDispatchState> {
-    pub(super) fn step(&mut self, input: &Input) -> (Option<ModeTransition>, CpuOutput) {
+    pub(super) fn step(&mut self, input: &Input) -> (Option<ModeTransition>, Output) {
         match self.run.m_cycle {
             M2 => (None, None),
             M3 => (None, None),

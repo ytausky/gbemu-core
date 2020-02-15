@@ -95,7 +95,7 @@ const RET: u8 = 0xc9;
 impl Cpu {
     fn test_simple_instr<'a, I>(&mut self, opcode: &[u8], steps: I)
     where
-        I: IntoIterator<Item = &'a (Input, CpuOutput)>,
+        I: IntoIterator<Item = &'a (Input, Output)>,
     {
         let steps: Vec<_> = steps
             .into_iter()
@@ -113,7 +113,7 @@ impl Cpu {
 
     fn test_opcode<'a, I>(&mut self, opcode: &[u8], steps: I)
     where
-        I: IntoIterator<Item = &'a (Input, CpuOutput)>,
+        I: IntoIterator<Item = &'a (Input, Output)>,
     {
         let pc = self.data.pc;
         for (i, byte) in opcode.iter().enumerate() {

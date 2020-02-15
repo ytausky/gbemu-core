@@ -108,7 +108,7 @@ impl Default for Cpu {
 const NOP: u8 = 0x00;
 
 impl Cpu {
-    pub fn step(&mut self, input: &Input) -> CpuOutput {
+    pub fn step(&mut self, input: &Input) -> Output {
         let (transition, output) = match &mut self.mode {
             Mode::Halt(mode) => BasicView {
                 basic: &mut self.data,
@@ -138,7 +138,7 @@ struct BasicView<'a, T> {
 }
 
 impl<'a> BasicView<'a, Halt> {
-    fn step(&mut self, input: &Input) -> (Option<ModeTransition>, CpuOutput) {
+    fn step(&mut self, input: &Input) -> (Option<ModeTransition>, Output) {
         match self.basic.phase {
             Tick => (None, None),
             Tock => {
@@ -154,7 +154,7 @@ impl<'a> BasicView<'a, Halt> {
 }
 
 impl<'a> BasicView<'a, Run> {
-    fn step(&mut self, input: &Input) -> (Option<ModeTransition>, CpuOutput) {
+    fn step(&mut self, input: &Input) -> (Option<ModeTransition>, Output) {
         let result = match &mut self.mode.task {
             Task::Instruction(state) => RunView {
                 basic: self.basic,
@@ -420,7 +420,7 @@ impl Default for Phase {
     }
 }
 
-type CpuOutput = Option<BusActivity>;
+type Output = Option<BusActivity>;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct BusActivity {

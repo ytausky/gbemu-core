@@ -5,7 +5,7 @@ fn split_opcode(opcode: u8) -> (u8, u8, u8) {
 }
 
 impl<'a> RunView<'a, InstructionExecutionState> {
-    pub(super) fn step(&mut self, input: &Input) -> (Option<ModeTransition>, CpuOutput) {
+    pub(super) fn step(&mut self, input: &Input) -> (Option<ModeTransition>, Output) {
         match self.basic.phase {
             Tick => {
                 let output = self.exec_instr();
@@ -35,7 +35,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
         }
     }
 
-    fn exec_instr(&mut self) -> CpuOutput {
+    fn exec_instr(&mut self) -> Output {
         match split_opcode(self.state.opcode) {
             (0b00, 0b000, 0b000) => self.nop(),
             (0b00, dest, 0b001) if dest & 0b001 == 0 => self.ld_dd_nn((dest >> 1).into()),
