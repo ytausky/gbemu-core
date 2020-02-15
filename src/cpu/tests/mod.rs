@@ -1,5 +1,34 @@
 use super::*;
 
+macro_rules! input {
+    ($($tokens:tt)*) => {
+        {
+            #[allow(unused_mut)]
+            let mut input = Input { data: None, r#if: 0x00 };
+            input_inner!(input, $($tokens)*);
+            input
+        }
+    };
+}
+
+macro_rules! input_inner {
+    ($input:ident, data: $data:expr, $($tokens:tt)*) => {
+        input_inner!($input, data: $data);
+        input_inner!($input, $($tokens)*)
+    };
+    ($input:ident, data: $data:expr) => {
+        $input.data = Some($data)
+    };
+    ($input:ident, if: $if:expr, $($tokens:tt)*) => {
+        input_inner!($input, if: $if);
+        input_inner!($input, $($tokens)*)
+    };
+    ($input:ident, if: $if:expr) => {
+        $input.r#if = $if
+    };
+    ($input:ident,) => {};
+}
+
 mod alu;
 mod branch;
 mod interrupt;
@@ -48,15 +77,15 @@ fn ret() {
     cpu.test_opcode(
         &[RET],
         &[
-            (Input::with_data(None), bus_read(0x1234)),
-            (Input::with_data(Some(0x78)), None),
-            (Input::with_data(None), bus_read(0x1235)),
-            (Input::with_data(Some(0x56)), None),
+            (input!(), bus_read(0x1234)),
+            (input!(data: 0x78), None),
+            (input!(), bus_read(0x1235)),
+            (input!(data: 0x56), None),
             // M3 doesn't do any bus operation (according to LIJI32 and gekkio)
-            (Input::with_data(None), None),
-            (Input::with_data(None), None),
-            (Input::with_data(None), bus_read(0x5678)),
-            (Input::with_data(Some(0x00)), None),
+            (input!(), None),
+            (input!(), None),
+            (input!(), bus_read(0x5678)),
+            (input!(data: 0x00), None),
         ],
     );
     assert_eq!(cpu.data.sp, 0x1236)
@@ -69,22 +98,22 @@ fn two_rets() {
     cpu.test_opcode(
         &[RET],
         &[
-            (Input::with_data(None), bus_read(0x1234)),
-            (Input::with_data(Some(0x78)), None),
-            (Input::with_data(None), bus_read(0x1235)),
-            (Input::with_data(Some(0x56)), None),
-            (Input::with_data(None), None),
-            (Input::with_data(None), None),
-            (Input::with_data(None), bus_read(0x5678)),
-            (Input::with_data(Some(RET)), None),
-            (Input::with_data(None), bus_read(0x1236)),
-            (Input::with_data(Some(0xbc)), None),
-            (Input::with_data(None), bus_read(0x1237)),
-            (Input::with_data(Some(0x9a)), None),
-            (Input::with_data(None), None),
-            (Input::with_data(None), None),
-            (Input::with_data(None), bus_read(0x9abc)),
-            (Input::with_data(Some(0x00)), None),
+            (input!(), bus_read(0x1234)),
+            (input!(data: 0x78), None),
+            (input!(), bus_read(0x1235)),
+            (input!(data: 0x56), None),
+            (input!(), None),
+            (input!(), None),
+            (input!(), bus_read(0x5678)),
+            (input!(data: RET), None),
+            (input!(), bus_read(0x1236)),
+            (input!(data: 0xbc), None),
+            (input!(), bus_read(0x1237)),
+            (input!(data: 0x9a), None),
+            (input!(), None),
+            (input!(), None),
+            (input!(), bus_read(0x9abc)),
+            (input!(data: 0x00), None),
         ],
     );
     assert_eq!(cpu.data.sp, 0x1238)
@@ -101,11 +130,8 @@ impl Cpu {
             .into_iter()
             .cloned()
             .chain(vec![
-                (
-                    Input::with_data(None),
-                    bus_read(self.data.pc + opcode.len() as u16),
-                ),
-                (Input::with_data(Some(0x00)), None),
+                (input!(), bus_read(self.data.pc + opcode.len() as u16)),
+                (input!(data: 0x00), None),
             ])
             .collect();
         self.test_opcode(opcode, &steps);
@@ -117,17 +143,11 @@ impl Cpu {
     {
         let pc = self.data.pc;
         for (i, byte) in opcode.iter().enumerate() {
-            assert_eq!(self.step(&Input::with_data(None)), bus_read(pc + i as u16));
-            assert_eq!(self.step(&Input::with_data(Some(*byte))), None);
+            assert_eq!(self.step(&input!()), bus_read(pc + i as u16));
+            assert_eq!(self.step(&input!(data: *byte)), None);
         }
         for (input, output) in steps {
             assert_eq!(self.step(input), *output)
         }
-    }
-}
-
-impl Input {
-    fn with_data(data: Option<u8>) -> Self {
-        Self { data, r#if: 0x00 }
     }
 }

@@ -48,68 +48,20 @@ fn halt_mode_canceled_and_interrupt_dispatched() {
     cpu.data.ime = true;
 
     // Fetch HALT opcode
-    assert_eq!(
-        cpu.step(&Input {
-            data: None,
-            r#if: 0x00
-        }),
-        bus_read(0x0000)
-    );
-    assert_eq!(
-        cpu.step(&Input {
-            data: Some(HALT),
-            r#if: 0x00
-        }),
-        None
-    );
+    assert_eq!(cpu.step(&input!()), bus_read(0x0000));
+    assert_eq!(cpu.step(&input!(data: HALT)), None);
 
     // Execute HALT
-    assert_eq!(
-        cpu.step(&Input {
-            data: None,
-            r#if: 0x00
-        }),
-        None
-    );
-    assert_eq!(
-        cpu.step(&Input {
-            data: None,
-            r#if: 0x00
-        }),
-        None
-    );
+    assert_eq!(cpu.step(&input!()), None);
+    assert_eq!(cpu.step(&input!()), None);
 
     // Wait one M-cycle to avoid testing behavior immediately following HALT execution
-    assert_eq!(
-        cpu.step(&Input {
-            data: None,
-            r#if: 0x00
-        }),
-        None
-    );
-    assert_eq!(
-        cpu.step(&Input {
-            data: None,
-            r#if: 0x00
-        }),
-        None
-    );
+    assert_eq!(cpu.step(&input!()), None);
+    assert_eq!(cpu.step(&input!()), None);
 
     // Request interrupt
-    assert_eq!(
-        cpu.step(&Input {
-            data: None,
-            r#if: 0x01,
-        }),
-        None
-    );
-    assert_eq!(
-        cpu.step(&Input {
-            data: None,
-            r#if: 0x01,
-        }),
-        None
-    );
+    assert_eq!(cpu.step(&input!(if: 0x01)), None);
+    assert_eq!(cpu.step(&input!(if: 0x01)), None);
 
     cpu.assert_interrupt_dispatch(0x01, 0);
 }
@@ -122,10 +74,7 @@ fn reading_0xffff_returns_ie() {
     cpu.data.ie = 0x15;
     cpu.test_simple_instr(
         &[0xf0, 0xff],
-        &[
-            (Input::with_data(None), bus_read(0xffff)),
-            (Input::with_data(None), None),
-        ],
+        &[(input!(), bus_read(0xffff)), (input!(), None)],
     );
     assert_eq!(cpu.data.a, 0x15)
 }
@@ -139,10 +88,10 @@ fn read_memory_in_same_instruction_after_reading_0xffff() {
     cpu.test_simple_instr(
         &[POP_BC],
         &[
-            (Input::with_data(None), bus_read(0xffff)),
-            (Input::with_data(None), None),
-            (Input::with_data(None), bus_read(0x0000)),
-            (Input::with_data(Some(0x42)), None),
+            (input!(), bus_read(0xffff)),
+            (input!(), None),
+            (input!(), bus_read(0x0000)),
+            (input!(data: 0x42), None),
         ],
     );
     assert_eq!(cpu.data.bc(), 0x4215)
@@ -155,10 +104,7 @@ fn writing_0xffff_sets_5_lower_bits_of_ie() {
     cpu.data.a = 0xff;
     cpu.test_simple_instr(
         &[0xe0, 0xff],
-        &[
-            (Input::with_data(None), bus_write(0xffff, 0xff)),
-            (Input::with_data(None), None),
-        ],
+        &[(input!(), bus_write(0xffff, 0xff)), (input!(), None)],
     );
     assert_eq!(cpu.data.ie, 0x1f)
 }
@@ -175,59 +121,39 @@ fn writing_0xffff_during_interrupt_dispatch_updates_ie() {
 
 impl Cpu {
     fn assert_fetch_and_interrupt_dispatch(&mut self, r#if: u8, n: u16) {
-        let input = Input { data: None, r#if };
         self.data.ime = true;
-        assert_eq!(self.step(&input), bus_read(self.data.pc));
-        assert_eq!(
-            self.step(&Input {
-                data: Some(0x00),
-                r#if
-            }),
-            None
-        );
+        assert_eq!(self.step(&input!(if: r#if)), bus_read(self.data.pc));
+        assert_eq!(self.step(&input!(data: NOP, if: r#if)), None);
         self.assert_interrupt_dispatch(r#if, n)
     }
 
     fn assert_interrupt_dispatch(&mut self, r#if: u8, n: u16) {
         let pc = self.data.pc;
         let sp = self.data.sp;
-        let input = Input { data: None, r#if };
-        assert_eq!(self.step(&input), None);
-        assert_eq!(self.step(&input), None);
-        assert_eq!(self.step(&input), None);
-        assert_eq!(self.step(&input), None);
+        assert_eq!(self.step(&input!(if: r#if)), None);
+        assert_eq!(self.step(&input!(if: r#if)), None);
+        assert_eq!(self.step(&input!(if: r#if)), None);
+        assert_eq!(self.step(&input!(if: r#if)), None);
         assert_eq!(
-            self.step(&input),
+            self.step(&input!(if: r#if)),
             bus_write(sp.wrapping_sub(1), high_byte(pc))
         );
-        assert_eq!(self.step(&input), None);
+        assert_eq!(self.step(&input!(if: r#if)), None);
         assert_eq!(
-            self.step(&input),
+            self.step(&input!(if: r#if)),
             bus_write(sp.wrapping_sub(2), low_byte(pc))
         );
-        assert_eq!(self.step(&input), None);
+        assert_eq!(self.step(&input!(if: r#if)), None);
         assert!(!self.data.ime);
-        assert_eq!(self.step(&Input::with_data(None)), bus_read(0x0040 + 8 * n));
-        assert_eq!(self.step(&Input::with_data(Some(0x00))), None);
+        assert_eq!(self.step(&input!()), bus_read(0x0040 + 8 * n));
+        assert_eq!(self.step(&input!(data: 0x00)), None);
     }
 
     fn assert_no_interrupt_dispatch(&mut self, r#if: u8) {
         let pc = self.data.pc;
-        assert_eq!(self.step(&Input { data: None, r#if }), bus_read(pc));
-        assert_eq!(
-            self.step(&Input {
-                data: Some(0x00),
-                r#if
-            }),
-            None
-        );
-        assert_eq!(self.step(&Input { data: None, r#if }), bus_read(pc + 1));
-        assert_eq!(
-            self.step(&Input {
-                data: Some(0x00),
-                r#if
-            }),
-            None
-        );
+        assert_eq!(self.step(&input!(if: r#if)), bus_read(pc));
+        assert_eq!(self.step(&input!(data: 0x00, if: r#if)), None);
+        assert_eq!(self.step(&input!(if: r#if)), bus_read(pc + 1));
+        assert_eq!(self.step(&input!(data: 0x00, if: r#if)), None);
     }
 }
