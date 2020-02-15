@@ -34,7 +34,7 @@ macro_rules! output {
         {
             #[allow(unused_mut)]
             #[allow(unused_assignments)]
-            let mut output = Output { bus: None };
+            let mut output = Output { bus: None, ack: 0x00 };
             output_inner!(output, $($tokens)*);
             output
         }

@@ -30,7 +30,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
                 } else {
                     None
                 };
-                (transition, Output { bus: None })
+                (transition, Default::default())
             }
         }
     }
@@ -76,7 +76,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
             (0b11, 0b111, 0b010) => self.ld_a_deref_nn(),
             _ => unimplemented!(),
         };
-        Output { bus }
+        Output { bus, ack: 0x00 }
     }
 
     fn nop(&mut self) -> Option<BusActivity> {
