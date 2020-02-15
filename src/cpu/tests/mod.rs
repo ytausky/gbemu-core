@@ -34,7 +34,7 @@ macro_rules! output {
         {
             #[allow(unused_mut)]
             #[allow(unused_assignments)]
-            let mut output = None;
+            let mut output = Output { bus: None };
             output_inner!(output, $($tokens)*);
             output
         }
@@ -43,7 +43,7 @@ macro_rules! output {
 
 macro_rules! output_inner {
     ($output:ident, bus: $bus:expr) => {
-        $output = Some($bus);
+        $output.bus = Some($bus);
     };
     ($output:ident,) => {};
 }

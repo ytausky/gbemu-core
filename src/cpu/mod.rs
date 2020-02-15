@@ -140,14 +140,14 @@ struct BasicView<'a, T> {
 impl<'a> BasicView<'a, Halt> {
     fn step(&mut self, input: &Input) -> (Option<ModeTransition>, Output) {
         match self.basic.phase {
-            Tick => (None, None),
+            Tick => (None, Output { bus: None }),
             Tock => {
                 let transition = if input.r#if & self.basic.ie != 0x00 {
                     Some(ModeTransition::Interrupt)
                 } else {
                     None
                 };
-                (transition, None)
+                (transition, Output { bus: None })
             }
         }
     }
@@ -420,7 +420,10 @@ impl Default for Phase {
     }
 }
 
-type Output = Option<BusActivity>;
+#[derive(Clone, Debug, PartialEq)]
+pub struct Output {
+    pub bus: Option<BusActivity>,
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct BusActivity {

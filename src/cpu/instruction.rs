@@ -30,13 +30,13 @@ impl<'a> RunView<'a, InstructionExecutionState> {
                 } else {
                     None
                 };
-                (transition, None)
+                (transition, Output { bus: None })
             }
         }
     }
 
     fn exec_instr(&mut self) -> Output {
-        match split_opcode(self.state.opcode) {
+        let bus = match split_opcode(self.state.opcode) {
             (0b00, 0b000, 0b000) => self.nop(),
             (0b00, dest, 0b001) if dest & 0b001 == 0 => self.ld_dd_nn((dest >> 1).into()),
             (0b00, 0b000, 0b010) => self.ld_deref_bc_a(),
@@ -75,7 +75,8 @@ impl<'a> RunView<'a, InstructionExecutionState> {
             (0b11, 0b111, 0b001) => self.ld_sp_hl(),
             (0b11, 0b111, 0b010) => self.ld_a_deref_nn(),
             _ => unimplemented!(),
-        }
+        };
+        Output { bus }
     }
 
     fn nop(&mut self) -> Option<BusActivity> {
