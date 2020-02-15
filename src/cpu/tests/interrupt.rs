@@ -175,11 +175,9 @@ fn writing_0xffff_during_interrupt_dispatch_updates_ie() {
 
 impl Cpu {
     fn assert_fetch_and_interrupt_dispatch(&mut self, r#if: u8, n: u16) {
-        let pc = self.data.pc;
-        let sp = self.data.sp;
         let input = Input { data: None, r#if };
         self.data.ime = true;
-        assert_eq!(self.step(&input), bus_read(pc));
+        assert_eq!(self.step(&input), bus_read(self.data.pc));
         assert_eq!(
             self.step(&Input {
                 data: Some(0x00),
@@ -187,23 +185,7 @@ impl Cpu {
             }),
             None
         );
-        assert_eq!(self.step(&input), None);
-        assert_eq!(self.step(&input), None);
-        assert_eq!(self.step(&input), None);
-        assert_eq!(self.step(&input), None);
-        assert_eq!(
-            self.step(&input),
-            bus_write(sp.wrapping_sub(1), high_byte(pc))
-        );
-        assert_eq!(self.step(&input), None);
-        assert_eq!(
-            self.step(&input),
-            bus_write(sp.wrapping_sub(2), low_byte(pc))
-        );
-        assert_eq!(self.step(&input), None);
-        assert!(!self.data.ime);
-        assert_eq!(self.step(&Input::with_data(None)), bus_read(0x0040 + 8 * n));
-        assert_eq!(self.step(&Input::with_data(Some(0x00))), None);
+        self.assert_interrupt_dispatch(r#if, n)
     }
 
     fn assert_interrupt_dispatch(&mut self, r#if: u8, n: u16) {
