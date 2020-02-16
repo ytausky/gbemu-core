@@ -97,6 +97,7 @@ const RET: u8 = 0xc9;
 #[derive(Default)]
 struct TestBench {
     cpu: Cpu,
+    r#if: u8,
     trace: CpuTrace,
     expected: CpuTrace,
 }
@@ -119,16 +120,25 @@ impl TestBench {
     }
 
     fn trace_bus_no_op(&mut self) {
-        self.trace_step(input!(), output!());
-        self.trace_step(input!(), output!())
+        self.trace_step(None, output!());
+        self.trace_step(None, output!())
     }
 
     fn trace_bus_read(&mut self, addr: u16, data: u8) {
-        self.trace_step(input!(), output!(bus: bus_read(addr)));
-        self.trace_step(input!(data: data), output!())
+        self.trace_step(None, output!(bus: bus_read(addr)));
+        self.trace_step(Some(data), output!())
     }
 
-    fn trace_step(&mut self, input: Input, output: Output) {
+    fn trace_bus_write(&mut self, addr: u16, data: u8) {
+        self.trace_step(None, output!(bus: bus_write(addr, data)));
+        self.trace_step(None, output!())
+    }
+
+    fn trace_step(&mut self, data: Option<u8>, output: Output) {
+        let input = Input {
+            data,
+            r#if: self.r#if,
+        };
         self.trace.push((input.clone(), self.cpu.step(&input)));
         self.expected.push((input, output))
     }
