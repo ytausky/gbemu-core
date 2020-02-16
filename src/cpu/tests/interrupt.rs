@@ -66,27 +66,22 @@ fn ie_is_checked_when_choosing_interrupt_vector() {
 }
 
 #[test]
-fn halt_mode_canceled_and_interrupt_dispatched() {
+fn halt_mode_canceled_and_interrupt_dispatched_when_ime_is_set() {
     let mut bench = TestBench::default();
-
-    // Fetch HALT opcode
-    bench.trace_fetch(bench.cpu.data.pc, &[HALT]);
-
-    // Execute HALT
-    bench.trace_bus_no_op();
-
-    // Wait one M-cycle to avoid testing behavior immediately following HALT execution
-    bench.trace_bus_no_op();
-
-    // Request interrupt
-    bench.r#if = 0x01;
-    bench.trace_bus_no_op();
-
+    bench.request_interrupt_in_halt_mode(0);
     bench.trace_interrupt_dispatch(0x01);
     assert_eq!(bench.trace, bench.expected)
 }
 
-const HALT: u8 = 0x76;
+#[test]
+fn halt_mode_canceled_and_interrupt_not_dispatched_when_ime_is_reset() {
+    let mut bench = TestBench::default();
+    bench.cpu.data.ime = false;
+    bench.request_interrupt_in_halt_mode(0);
+    bench.trace_fetch(bench.cpu.data.pc, &[NOP]);
+    bench.trace_fetch(bench.cpu.data.pc, &[NOP]);
+    assert_eq!(bench.trace, bench.expected)
+}
 
 #[test]
 fn reading_0xffff_returns_ie() {
@@ -165,4 +160,21 @@ impl TestBench {
         );
         self.trace_step(None, output!(ack: ack))
     }
+
+    fn request_interrupt_in_halt_mode(&mut self, n: u32) {
+        // Fetch HALT opcode
+        self.trace_fetch(self.cpu.data.pc, &[HALT]);
+
+        // Execute HALT
+        self.trace_bus_no_op();
+
+        // Wait one M-cycle to avoid testing behavior immediately following HALT execution
+        self.trace_bus_no_op();
+
+        // Request interrupt
+        self.r#if = 1 << n;
+        self.trace_bus_no_op();
+    }
 }
+
+const HALT: u8 = 0x76;

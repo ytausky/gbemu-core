@@ -143,7 +143,11 @@ impl<'a> BasicView<'a, Halt> {
             Tick => (None, Default::default()),
             Tock => {
                 let transition = if input.r#if & self.basic.ie != 0x00 {
-                    Some(ModeTransition::Interrupt)
+                    Some(if self.basic.ime {
+                        ModeTransition::Interrupt
+                    } else {
+                        ModeTransition::Instruction(NOP)
+                    })
                 } else {
                     None
                 };
