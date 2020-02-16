@@ -161,6 +161,30 @@ fn jp_deref_hl() {
     assert_eq!(cpu.data.pc, 0x1235)
 }
 
+#[test]
+fn ret_jumps_to_target() {
+    let mut bench = TestBench::default();
+    let target = 0x5678;
+    bench.trace_ret(target);
+    assert_eq!(bench.cpu.data.pc, target)
+}
+
+#[test]
+fn ret_increments_sp_by_2() {
+    let mut bench = TestBench::default();
+    let sp = bench.cpu.data.sp;
+    bench.trace_ret(0x5678);
+    assert_eq!(bench.cpu.data.sp, sp.wrapping_add(2))
+}
+
+#[test]
+fn ret_after_ret() {
+    let mut bench = TestBench::default();
+    bench.trace_ret(0x5678);
+    bench.trace_ret(0x9abc);
+    assert_eq!(bench.trace, bench.expected)
+}
+
 impl TestBench {
     fn set_condition_flag(&mut self, cc: Cc) {
         match cc {

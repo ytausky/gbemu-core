@@ -92,55 +92,6 @@ impl Qq {
     }
 }
 
-#[test]
-fn ret() {
-    let mut cpu = Cpu::default();
-    cpu.data.sp = 0x1234;
-    cpu.test_opcode(
-        &[RET],
-        &[
-            (input!(), output!(bus: bus_read(0x1234))),
-            (input!(data: 0x78), output!()),
-            (input!(), output!(bus: bus_read(0x1235))),
-            (input!(data: 0x56), output!()),
-            // M3 doesn't do any bus operation (according to LIJI32 and gekkio)
-            (input!(), output!()),
-            (input!(), output!()),
-            (input!(), output!(bus: bus_read(0x5678))),
-            (input!(data: 0x00), output!()),
-        ],
-    );
-    assert_eq!(cpu.data.sp, 0x1236)
-}
-
-#[test]
-fn two_rets() {
-    let mut cpu = Cpu::default();
-    cpu.data.sp = 0x1234;
-    cpu.test_opcode(
-        &[RET],
-        &[
-            (input!(), output!(bus: bus_read(0x1234))),
-            (input!(data: 0x78), output!()),
-            (input!(), output!(bus: bus_read(0x1235))),
-            (input!(data: 0x56), output!()),
-            (input!(), output!()),
-            (input!(), output!()),
-            (input!(), output!(bus: bus_read(0x5678))),
-            (input!(data: RET), output!()),
-            (input!(), output!(bus: bus_read(0x1236))),
-            (input!(data: 0xbc), output!()),
-            (input!(), output!(bus: bus_read(0x1237))),
-            (input!(data: 0x9a), output!()),
-            (input!(), output!()),
-            (input!(), output!()),
-            (input!(), output!(bus: bus_read(0x9abc))),
-            (input!(data: 0x00), output!()),
-        ],
-    );
-    assert_eq!(cpu.data.sp, 0x1238)
-}
-
 const RET: u8 = 0xc9;
 
 #[derive(Default)]
