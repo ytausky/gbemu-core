@@ -25,6 +25,18 @@ fn interrupt_0_dispatch_jumps_to_0x0040() {
 }
 
 #[test]
+fn interrupt_0_dispatch_resets_ime() {
+    let mut bench = TestBench::default();
+    bench.cpu.data.sp = 0x2000;
+    bench.cpu.data.ie = 0x01;
+    bench.cpu.data.ime = true;
+    bench.r#if = 0x01;
+    bench.trace_fetch(bench.cpu.data.pc, &[NOP]);
+    bench.trace_interrupt_dispatch(0x01);
+    assert!(!bench.cpu.data.ime)
+}
+
+#[test]
 fn dispatch_interrupt_1() {
     let mut bench = TestBench::default();
     bench.cpu.data.sp = 0x2000;
