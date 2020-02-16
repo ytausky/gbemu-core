@@ -118,32 +118,29 @@ fn encode_jp(cc: Option<Cc>, addr: u16) -> Vec<u8> {
 
 #[test]
 fn jr_e_min_value() {
-    let mut cpu = Cpu::default();
-    cpu.data.pc = 0x1000;
-    cpu.test_opcode(
-        &[0x18, 0x80],
-        &[
-            (input!(), output!()),
-            (input!(), output!()),
-            (input!(), output!(bus: bus_read(0x0f82))),
-            (input!(data: 0x00), output!()),
-        ],
-    )
+    let mut bench = TestBench::default();
+    bench.trace_fetch(bench.cpu.data.pc, &encode_jr(None, 0x80));
+    bench.trace_bus_no_op();
+    assert_eq!(bench.cpu.data.pc, 0xff82)
 }
 
 #[test]
 fn jr_e_with_carry() {
-    let mut cpu = Cpu::default();
-    cpu.data.pc = 0x1080;
-    cpu.test_opcode(
-        &[0x18, 0x7e],
-        &[
-            (input!(), output!()),
-            (input!(), output!()),
-            (input!(), output!(bus: bus_read(0x1100))),
-            (input!(data: 0x00), output!()),
-        ],
-    )
+    let mut bench = TestBench::default();
+    bench.cpu.data.pc = 0x1080;
+    bench.trace_fetch(bench.cpu.data.pc, &encode_jr(None, 0x7e));
+    bench.trace_bus_no_op();
+    assert_eq!(bench.cpu.data.pc, 0x1100)
+}
+
+fn encode_jr(cc: Option<Cc>, e: u8) -> Vec<u8> {
+    vec![
+        match cc {
+            None => 0x18,
+            _ => unimplemented!(),
+        },
+        e,
+    ]
 }
 
 #[test]
