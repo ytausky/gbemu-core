@@ -92,7 +92,7 @@ fn read_memory_in_same_instruction_after_reading_0xffff() {
         &[POP_BC],
         &[
             (input!(), output!(bus: bus_read(0xffff))),
-            (input!(), output!()),
+            (input!(data: 0xff), output!()),
             (input!(), output!(bus: bus_read(0x0000))),
             (input!(data: 0x42), output!()),
         ],
