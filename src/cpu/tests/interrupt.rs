@@ -117,7 +117,7 @@ fn read_memory_in_same_instruction_after_reading_0xffff() {
 }
 
 #[test]
-fn writing_0xffff_sets_5_lower_bits_of_ie() {
+fn writing_0xffff_updates_ie() {
     let mut bench = TestBench::default();
     bench.cpu.data.ie = 0x00;
     bench.cpu.data.a = 0xff;
@@ -129,16 +129,21 @@ fn writing_0xffff_sets_5_lower_bits_of_ie() {
 }
 
 #[test]
-fn writing_0xffff_during_interrupt_dispatch_updates_ie() {
+fn writing_pc_h_to_0xffff_during_interrupt_dispatch_updates_ie() {
     let mut bench = TestBench::default();
-    bench.cpu.data.pc = 0xff00;
+    bench.cpu.data.pc = 0xf500;
     bench.cpu.data.sp = 0x0000;
-    bench.cpu.data.ie = 0x01;
-    bench.cpu.data.ime = true;
-    bench.r#if = 0x01;
-    bench.trace_fetch(bench.cpu.data.pc, &[NOP]);
-    bench.trace_interrupt_dispatch(0x01);
-    assert_eq!(bench.cpu.data.ie, 0x1f)
+    bench.trace_interrupt_request_and_dispatch(0);
+    assert_eq!(bench.cpu.data.ie, 0x15)
+}
+
+#[test]
+fn writing_pc_l_to_0xffff_during_interrupt_dispatch_updates_ie() {
+    let mut bench = TestBench::default();
+    bench.cpu.data.pc = 0x00f5;
+    bench.cpu.data.sp = 0x0001;
+    bench.trace_interrupt_request_and_dispatch(0);
+    assert_eq!(bench.cpu.data.ie, 0x15)
 }
 
 impl TestBench {

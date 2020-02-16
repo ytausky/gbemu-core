@@ -20,7 +20,7 @@ impl<'a> RunView<'a, InterruptDispatchState> {
             },
             M5 => match self.basic.phase {
                 Tick => {
-                    self.basic.sp -= 1;
+                    self.basic.sp = self.basic.sp.wrapping_sub(1);
                     (
                         None,
                         Output {
