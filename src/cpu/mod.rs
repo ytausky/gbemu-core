@@ -402,7 +402,7 @@ struct AluOutput {
     flags: Flags,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Input {
     data: Option<u8>,
     r#if: u8,

@@ -143,6 +143,47 @@ fn two_rets() {
 
 const RET: u8 = 0xc9;
 
+#[derive(Default)]
+struct TestBench {
+    cpu: Cpu,
+    trace: CpuTrace,
+    expected: CpuTrace,
+}
+
+type CpuTrace = Vec<(Input, Output)>;
+
+impl TestBench {
+    fn trace_ret(&mut self, addr: u16) {
+        let sp = self.cpu.data.sp;
+        self.trace_fetch(&[RET]);
+        self.trace_bus_read(sp, low_byte(addr));
+        self.trace_bus_read(sp.wrapping_add(1), high_byte(addr));
+        self.trace_bus_no_op()
+    }
+
+    fn trace_fetch(&mut self, encoding: &[u8]) {
+        let pc = self.cpu.data.pc;
+        for (i, byte) in encoding.iter().enumerate() {
+            self.trace_bus_read(pc.wrapping_add(i as u16), *byte)
+        }
+    }
+
+    fn trace_bus_no_op(&mut self) {
+        self.trace_step(input!(), output!());
+        self.trace_step(input!(), output!())
+    }
+
+    fn trace_bus_read(&mut self, addr: u16, data: u8) {
+        self.trace_step(input!(), output!(bus: bus_read(addr)));
+        self.trace_step(input!(data: data), output!())
+    }
+
+    fn trace_step(&mut self, input: Input, output: Output) {
+        self.trace.push((input.clone(), self.cpu.step(&input)));
+        self.expected.push((input, output))
+    }
+}
+
 impl Cpu {
     fn test_simple_instr<'a, I>(&mut self, opcode: &[u8], steps: I)
     where
