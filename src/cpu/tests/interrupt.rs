@@ -3,45 +3,35 @@ use super::*;
 #[test]
 fn dispatch_interrupt_0() {
     let mut bench = TestBench::default();
-    bench.r#if = 0x01;
-    bench.trace_fetch(bench.cpu.data.pc, &[NOP]);
-    bench.trace_interrupt_dispatch(0x01);
+    bench.trace_interrupt_request_and_dispatch(0);
     assert_eq!(bench.trace, bench.expected)
 }
 
 #[test]
 fn interrupt_0_dispatch_jumps_to_0x0040() {
     let mut bench = TestBench::default();
-    bench.r#if = 0x01;
-    bench.trace_fetch(bench.cpu.data.pc, &[NOP]);
-    bench.trace_interrupt_dispatch(0x01);
+    bench.trace_interrupt_request_and_dispatch(0);
     assert_eq!(bench.cpu.data.pc, 0x0040)
 }
 
 #[test]
 fn interrupt_0_dispatch_resets_ime() {
     let mut bench = TestBench::default();
-    bench.r#if = 0x01;
-    bench.trace_fetch(bench.cpu.data.pc, &[NOP]);
-    bench.trace_interrupt_dispatch(0x01);
+    bench.trace_interrupt_request_and_dispatch(0);
     assert!(!bench.cpu.data.ime)
 }
 
 #[test]
 fn dispatch_interrupt_1() {
     let mut bench = TestBench::default();
-    bench.r#if = 0x02;
-    bench.trace_fetch(bench.cpu.data.pc, &[NOP]);
-    bench.trace_interrupt_dispatch(0x02);
+    bench.trace_interrupt_request_and_dispatch(1);
     assert_eq!(bench.trace, bench.expected)
 }
 
 #[test]
 fn interrupt_1_dispatch_jumps_to_0x0048() {
     let mut bench = TestBench::default();
-    bench.r#if = 0x02;
-    bench.trace_fetch(bench.cpu.data.pc, &[NOP]);
-    bench.trace_interrupt_dispatch(0x02);
+    bench.trace_interrupt_request_and_dispatch(1);
     assert_eq!(bench.cpu.data.pc, 0x0048)
 }
 
@@ -152,13 +142,22 @@ fn writing_0xffff_during_interrupt_dispatch_updates_ie() {
 }
 
 impl TestBench {
+    fn trace_interrupt_request_and_dispatch(&mut self, n: u32) {
+        self.r#if = 1 << n;
+        self.trace_fetch(self.cpu.data.pc, &[NOP]);
+        self.trace_interrupt_dispatch(1 << n);
+    }
+
     fn trace_interrupt_dispatch(&mut self, ack: u8) {
         let pc = self.cpu.data.pc;
         let sp = self.cpu.data.sp;
         self.trace_bus_no_op();
         self.trace_bus_no_op();
         self.trace_bus_write(sp.wrapping_sub(1), high_byte(pc));
-        self.trace_step(None, output!(bus: bus_write(sp.wrapping_sub(2), low_byte(pc))));
+        self.trace_step(
+            None,
+            output!(bus: bus_write(sp.wrapping_sub(2), low_byte(pc))),
+        );
         self.trace_step(None, output!(ack: ack))
     }
 }
