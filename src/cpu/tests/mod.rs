@@ -1,54 +1,45 @@
 use super::*;
 
 macro_rules! input {
-    ($($tokens:tt)*) => {
+    () => {
+        Input { data: None, r#if: 0x00 }
+    };
+    ($field:ident $($tokens:tt)*) => {
         {
-            #[allow(unused_mut)]
-            let mut input = Input { data: None, r#if: 0x00 };
-            input_inner!(input, $($tokens)*);
+            let mut input = input!();
+            input!(@ input, $field $($tokens)*);
             input
         }
     };
-}
-
-macro_rules! input_inner {
-    ($input:ident, data: $data:expr, $($tokens:tt)*) => {
-        input_inner!($input, data: $data);
-        input_inner!($input, $($tokens)*)
+    (@ $input:ident, $field:ident: $value:expr, $($tokens:tt)*) => {
+        input!(@ $input, $field: $value);
+        input!(@ $input, $($tokens)*)
     };
-    ($input:ident, data: $data:expr) => {
+    (@ $input:ident, data: $data:expr) => {
         $input.data = Some($data)
     };
-    ($input:ident, if: $if:expr, $($tokens:tt)*) => {
-        input_inner!($input, if: $if);
-        input_inner!($input, $($tokens)*)
-    };
-    ($input:ident, if: $if:expr) => {
+    (@ $input:ident, if: $if:expr) => {
         $input.r#if = $if
     };
-    ($input:ident,) => {};
 }
 
 macro_rules! output {
-    ($($tokens:tt)*) => {
+    () => {
+        Output { bus: None, ack: 0x00 }
+    };
+    ($field:ident $($tokens:tt)*) => {
         {
-            #[allow(unused_mut)]
-            #[allow(unused_assignments)]
-            let mut output = Output { bus: None, ack: 0x00 };
-            output_inner!(output, $($tokens)*);
+            let mut output = output!();
+            output!(@ output, $field $($tokens)*);
             output
         }
     };
-}
-
-macro_rules! output_inner {
-    ($output:ident, bus: $bus:expr) => {
+    (@ $output:ident, bus: $bus:expr) => {
         $output.bus = Some($bus);
     };
-    ($output:ident, ack: $ack:expr) => {
+    (@ $output:ident, ack: $ack:expr) => {
         $output.ack = $ack;
     };
-    ($output:ident,) => {};
 }
 
 mod alu;
