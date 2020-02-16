@@ -61,7 +61,7 @@ fn ie_is_checked_when_choosing_interrupt_vector() {
     bench.cpu.data.ie = 0x1e;
     bench.r#if = 0x03;
     bench.trace_fetch(bench.cpu.data.pc, &[NOP]);
-    bench.trace_interrupt_dispatch(0x02);
+    bench.trace_interrupt_dispatch(1);
     assert_eq!(bench.trace, bench.expected)
 }
 
@@ -69,7 +69,7 @@ fn ie_is_checked_when_choosing_interrupt_vector() {
 fn halt_mode_canceled_and_interrupt_dispatched_when_ime_is_set() {
     let mut bench = TestBench::default();
     bench.request_interrupt_in_halt_mode(0);
-    bench.trace_interrupt_dispatch(0x01);
+    bench.trace_interrupt_dispatch(0);
     assert_eq!(bench.trace, bench.expected)
 }
 
@@ -145,10 +145,10 @@ impl TestBench {
     fn trace_interrupt_request_and_dispatch(&mut self, n: u32) {
         self.r#if = 1 << n;
         self.trace_fetch(self.cpu.data.pc, &[NOP]);
-        self.trace_interrupt_dispatch(1 << n);
+        self.trace_interrupt_dispatch(n);
     }
 
-    fn trace_interrupt_dispatch(&mut self, ack: u8) {
+    fn trace_interrupt_dispatch(&mut self, n: u32) {
         let pc = self.cpu.data.pc;
         let sp = self.cpu.data.sp;
         self.trace_bus_no_op();
@@ -158,7 +158,7 @@ impl TestBench {
             None,
             output!(bus: bus_write(sp.wrapping_sub(2), low_byte(pc))),
         );
-        self.trace_step(None, output!(ack: ack))
+        self.trace_step(None, output!(ack: 1 << n))
     }
 
     fn request_interrupt_in_halt_mode(&mut self, n: u32) {
