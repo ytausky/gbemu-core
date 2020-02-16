@@ -38,7 +38,7 @@ fn non_branching_jp_nz_nn_does_not_jump_to_target() {
 fn ret_after_non_branching_jp_nz_nn() {
     let mut bench = TestBench::default();
     bench.set_condition_flag(!Cc::Nz);
-    bench.trace_fetch(&encode_jp(Some(Cc::Nz), 0x1234));
+    bench.trace_fetch(bench.cpu.data.pc, &encode_jp(Some(Cc::Nz), 0x1234));
     bench.trace_ret(0x5678);
     assert_eq!(bench.trace, bench.expected)
 }
@@ -90,14 +90,14 @@ impl TestBench {
         if let Some(cc) = cc {
             self.set_condition_flag(cc)
         }
-        self.trace_fetch(&encode_jp(cc, target));
+        self.trace_fetch(self.cpu.data.pc, &encode_jp(cc, target));
         self.trace_bus_no_op()
     }
 
     fn assert_non_branching_jp_does_not_jump_to_target(&mut self, cc: Cc) {
         let encoding = encode_jp(Some(cc), 0x1234);
         self.set_condition_flag(!cc);
-        self.trace_fetch(&encoding);
+        self.trace_fetch(self.cpu.data.pc, &encoding);
         assert_eq!(self.cpu.data.pc, encoding.len() as u16)
     }
 }
@@ -147,18 +147,17 @@ fn jr_e_with_carry() {
 }
 
 #[test]
-fn jp_deref_hl() {
-    let mut cpu = Cpu::default();
-    cpu.data.h = 0x12;
-    cpu.data.l = 0x34;
-    cpu.test_opcode(
-        &[0xe9],
-        &[
-            (input!(), output!(bus: bus_read(0x1234))),
-            (input!(data: 0x00), output!()),
-        ],
-    );
-    assert_eq!(cpu.data.pc, 0x1235)
+fn jp_deref_hl_sets_pc_to_hl() {
+    let mut bench = TestBench::default();
+    let target = 0x1234;
+    bench.cpu.data.h = high_byte(target);
+    bench.cpu.data.l = low_byte(target);
+    bench.trace_fetch(bench.cpu.data.pc, &[0xe9]);
+
+    // PC is set in the last M-cycle of the intruction, so we need to fetch the next instruction to
+    // observe the change in PC.
+    bench.trace_fetch(target, &[NOP]);
+    assert_eq!(bench.trace, bench.expected)
 }
 
 #[test]

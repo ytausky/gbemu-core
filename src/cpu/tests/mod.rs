@@ -106,14 +106,13 @@ type CpuTrace = Vec<(Input, Output)>;
 impl TestBench {
     fn trace_ret(&mut self, addr: u16) {
         let sp = self.cpu.data.sp;
-        self.trace_fetch(&[RET]);
+        self.trace_fetch(self.cpu.data.pc, &[RET]);
         self.trace_bus_read(sp, low_byte(addr));
         self.trace_bus_read(sp.wrapping_add(1), high_byte(addr));
         self.trace_bus_no_op()
     }
 
-    fn trace_fetch(&mut self, encoding: &[u8]) {
-        let pc = self.cpu.data.pc;
+    fn trace_fetch(&mut self, pc: u16, encoding: &[u8]) {
         for (i, byte) in encoding.iter().enumerate() {
             self.trace_bus_read(pc.wrapping_add(i as u16), *byte)
         }
