@@ -60,8 +60,8 @@ impl<'a> RunView<'a, InstructionExecutionState> {
             (0b10, op, 0b110) => self.alu_op_deref_hl(op.into()),
             (0b10, op, src) => self.alu_op_r(op.into(), src.into()),
             (0b11, dest, 0b001) if dest & 0b001 == 0 => self.pop_qq((dest >> 1).into()),
-            (0b11, 0b000, 0b011) => self.jp_nn(),
-            (0b11, cc, 0b010) if cc <= 0b011 => self.jp_cc_nn(cc.into()),
+            (0b11, 0b000, 0b011) => self.jp(None),
+            (0b11, cc, 0b010) if cc <= 0b011 => self.jp(Some(cc.into())),
             (0b11, src, 0b101) if src & 0b001 == 0 => self.push_qq((src >> 1).into()),
             (0b11, op, 0b110) => self.alu_op_n(op.into()),
             (0b11, 0b001, 0b001) => self.ret(),
@@ -476,7 +476,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
         }
     }
 
-    fn jp_nn(&mut self) -> Option<BusActivity> {
+    fn jp(&mut self, cc: Option<Cc>) -> Option<BusActivity> {
         match self.run.m_cycle {
             M2 => self.read_immediate(),
             M3 => {
@@ -484,23 +484,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
                 self.read_immediate()
             }
             M4 => {
-                self.basic.pc = u16::from_be_bytes([self.state.bus_data.unwrap(), self.state.data]);
-                None
-            }
-            M5 => self.execute_m1(),
-            _ => unreachable!(),
-        }
-    }
-
-    fn jp_cc_nn(&mut self, cc: Cc) -> Option<BusActivity> {
-        match self.run.m_cycle {
-            M2 => self.read_immediate(),
-            M3 => {
-                self.state.data = self.state.bus_data.unwrap();
-                self.read_immediate()
-            }
-            M4 => {
-                if self.evaluate_condition(cc) {
+                if cc.map(|cc| self.evaluate_condition(cc)).unwrap_or(true) {
                     self.basic.pc =
                         u16::from_be_bytes([self.state.bus_data.unwrap(), self.state.data]);
                     None
