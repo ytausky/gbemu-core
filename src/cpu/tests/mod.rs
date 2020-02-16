@@ -94,7 +94,6 @@ impl Qq {
 
 const RET: u8 = 0xc9;
 
-#[derive(Default)]
 struct TestBench {
     cpu: Cpu,
     r#if: u8,
@@ -103,6 +102,21 @@ struct TestBench {
 }
 
 type CpuTrace = Vec<(Input, Output)>;
+
+impl Default for TestBench {
+    fn default() -> Self {
+        let mut cpu = Cpu::default();
+        cpu.data.sp = 0xd000;
+        cpu.data.ie = 0x1f;
+        cpu.data.ime = true;
+        Self {
+            cpu,
+            r#if: 0x00,
+            trace: Default::default(),
+            expected: Default::default(),
+        }
+    }
+}
 
 impl TestBench {
     fn trace_ret(&mut self, addr: u16) {

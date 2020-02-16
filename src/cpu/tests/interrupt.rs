@@ -3,9 +3,6 @@ use super::*;
 #[test]
 fn dispatch_interrupt_0() {
     let mut bench = TestBench::default();
-    bench.cpu.data.sp = 0x2000;
-    bench.cpu.data.ie = 0x01;
-    bench.cpu.data.ime = true;
     bench.r#if = 0x01;
     bench.trace_fetch(bench.cpu.data.pc, &[NOP]);
     bench.trace_interrupt_dispatch(0x01);
@@ -15,9 +12,6 @@ fn dispatch_interrupt_0() {
 #[test]
 fn interrupt_0_dispatch_jumps_to_0x0040() {
     let mut bench = TestBench::default();
-    bench.cpu.data.sp = 0x2000;
-    bench.cpu.data.ie = 0x01;
-    bench.cpu.data.ime = true;
     bench.r#if = 0x01;
     bench.trace_fetch(bench.cpu.data.pc, &[NOP]);
     bench.trace_interrupt_dispatch(0x01);
@@ -27,9 +21,6 @@ fn interrupt_0_dispatch_jumps_to_0x0040() {
 #[test]
 fn interrupt_0_dispatch_resets_ime() {
     let mut bench = TestBench::default();
-    bench.cpu.data.sp = 0x2000;
-    bench.cpu.data.ie = 0x01;
-    bench.cpu.data.ime = true;
     bench.r#if = 0x01;
     bench.trace_fetch(bench.cpu.data.pc, &[NOP]);
     bench.trace_interrupt_dispatch(0x01);
@@ -39,9 +30,6 @@ fn interrupt_0_dispatch_resets_ime() {
 #[test]
 fn dispatch_interrupt_1() {
     let mut bench = TestBench::default();
-    bench.cpu.data.sp = 0x2000;
-    bench.cpu.data.ie = 0x02;
-    bench.cpu.data.ime = true;
     bench.r#if = 0x02;
     bench.trace_fetch(bench.cpu.data.pc, &[NOP]);
     bench.trace_interrupt_dispatch(0x02);
@@ -51,9 +39,6 @@ fn dispatch_interrupt_1() {
 #[test]
 fn interrupt_1_dispatch_jumps_to_0x0048() {
     let mut bench = TestBench::default();
-    bench.cpu.data.sp = 0x2000;
-    bench.cpu.data.ie = 0x02;
-    bench.cpu.data.ime = true;
     bench.r#if = 0x02;
     bench.trace_fetch(bench.cpu.data.pc, &[NOP]);
     bench.trace_interrupt_dispatch(0x02);
@@ -63,8 +48,7 @@ fn interrupt_1_dispatch_jumps_to_0x0048() {
 #[test]
 fn disabled_interrupt_0_does_not_cause_interrupt_dispatch() {
     let mut bench = TestBench::default();
-    bench.cpu.data.ie = 0x00;
-    bench.cpu.data.ime = true;
+    bench.cpu.data.ie = 0x1e;
     bench.r#if = 0x01;
     bench.trace_fetch(bench.cpu.data.pc, &[NOP]);
     bench.trace_fetch(bench.cpu.data.pc, &[NOP]);
@@ -74,7 +58,6 @@ fn disabled_interrupt_0_does_not_cause_interrupt_dispatch() {
 #[test]
 fn enabled_interrupt_not_dispatched_with_reset_ime() {
     let mut bench = TestBench::default();
-    bench.cpu.data.ie = 0x01;
     bench.cpu.data.ime = false;
     bench.r#if = 0x01;
     bench.trace_fetch(bench.cpu.data.pc, &[NOP]);
@@ -85,9 +68,7 @@ fn enabled_interrupt_not_dispatched_with_reset_ime() {
 #[test]
 fn ie_is_checked_when_choosing_interrupt_vector() {
     let mut bench = TestBench::default();
-    bench.cpu.data.sp = 0x8000;
-    bench.cpu.data.ie = 0x02;
-    bench.cpu.data.ime = true;
+    bench.cpu.data.ie = 0x1e;
     bench.r#if = 0x03;
     bench.trace_fetch(bench.cpu.data.pc, &[NOP]);
     bench.trace_interrupt_dispatch(0x02);
@@ -97,9 +78,6 @@ fn ie_is_checked_when_choosing_interrupt_vector() {
 #[test]
 fn halt_mode_canceled_and_interrupt_dispatched() {
     let mut bench = TestBench::default();
-    bench.cpu.data.sp = 0x8000;
-    bench.cpu.data.ie = 0x01;
-    bench.cpu.data.ime = true;
 
     // Fetch HALT opcode
     bench.trace_fetch(bench.cpu.data.pc, &[HALT]);
@@ -140,13 +118,12 @@ fn reading_0xffff_returns_ie() {
 fn read_memory_in_same_instruction_after_reading_0xffff() {
     let mut bench = TestBench::default();
     bench.cpu.data.sp = 0xffff;
-    bench.cpu.data.ie = 0x15;
     const POP_BC: u8 = 0xc1;
     bench.trace_fetch(bench.cpu.data.pc, &[POP_BC]);
-    bench.trace_bus_read(0xffff, 0xff);
+    bench.trace_bus_read(0xffff, 0x55);
     bench.trace_bus_read(0x0000, 0x42);
     bench.trace_fetch(bench.cpu.data.pc, &[NOP]);
-    assert_eq!(bench.cpu.data.bc(), 0x4215)
+    assert_eq!(bench.cpu.data.bc(), 0x421f)
 }
 
 #[test]
