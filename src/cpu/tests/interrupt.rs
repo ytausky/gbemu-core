@@ -90,11 +90,7 @@ fn reading_0xffff_returns_ie() {
     const LD_A_DEREF_N: u8 = 0xf0;
     let src = 0xffff;
     bench.trace_fetch(bench.cpu.data.pc, &[LD_A_DEREF_N, low_byte(src)]);
-
-    // Nothing else in the system reacts to this read
-    bench.trace_step(None, output!(bus: bus_read(src)));
-    bench.trace_step(None, output!());
-
+    bench.trace_open_bus_read(src);
     bench.trace_fetch(bench.cpu.data.pc, &[NOP]);
     assert_eq!(bench.cpu.data.a, 0x15)
 }
@@ -105,7 +101,7 @@ fn read_memory_in_same_instruction_after_reading_0xffff() {
     bench.cpu.data.sp = 0xffff;
     const POP_BC: u8 = 0xc1;
     bench.trace_fetch(bench.cpu.data.pc, &[POP_BC]);
-    bench.trace_bus_read(0xffff, 0x55);
+    bench.trace_open_bus_read(0xffff);
     bench.trace_bus_read(0x0000, 0x42);
     bench.trace_fetch(bench.cpu.data.pc, &[NOP]);
     assert_eq!(bench.cpu.data.bc(), 0x421f)
@@ -142,6 +138,11 @@ fn writing_pc_l_to_0xffff_during_interrupt_dispatch_updates_ie() {
 }
 
 impl TestBench {
+    fn trace_open_bus_read(&mut self, addr: u16) {
+        self.trace_step(None, output!(bus: bus_read(addr)));
+        self.trace_step(None, output!());
+    }
+
     fn trace_interrupt_request_and_dispatch(&mut self, n: u32) {
         self.r#if = 1 << n;
         self.trace_fetch(self.cpu.data.pc, &[NOP]);
