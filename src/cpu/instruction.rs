@@ -63,10 +63,11 @@ impl<'a> RunView<'a, InstructionExecutionState> {
             (0b11, dest, 0b001) if dest & 0b001 == 0 => self.pop_qq((dest >> 1).into()),
             (0b11, 0b000, 0b011) => self.jp(None),
             (0b11, cc, 0b010) if cc <= 0b011 => self.jp(Some(cc.into())),
+            (0b11, cc, 0b100) if cc <= 0b011 => self.call(Some(cc.into())),
             (0b11, src, 0b101) if src & 0b001 == 0 => self.push_qq((src >> 1).into()),
             (0b11, op, 0b110) => self.alu_op_n(op.into()),
             (0b11, 0b001, 0b001) => self.ret(),
-            (0b11, 0b001, 0b101) => self.call(),
+            (0b11, 0b001, 0b101) => self.call(None),
             (0b11, 0b100, 0b000) => self.ld_deref_n_a(),
             (0b11, 0b100, 0b010) => self.ld_deref_c_a(),
             (0b11, 0b101, 0b001) => self.jp_deref_hl(),
@@ -526,7 +527,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
         }
     }
 
-    fn call(&mut self) -> Option<BusActivity> {
+    fn call(&mut self, cc: Option<Cc>) -> Option<BusActivity> {
         match self.run.m_cycle {
             M2 => self.read_immediate(),
             M3 => {
@@ -534,8 +535,12 @@ impl<'a> RunView<'a, InstructionExecutionState> {
                 self.read_immediate()
             }
             M4 => {
-                self.state.w = self.state.bus_data;
-                None
+                if cc.map(|cc| self.evaluate_condition(cc)).unwrap_or(true) {
+                    self.state.w = self.state.bus_data;
+                    None
+                } else {
+                    self.execute_m1()
+                }
             }
             M5 => self.push_byte(high_byte(self.basic.pc)),
             M6 => {

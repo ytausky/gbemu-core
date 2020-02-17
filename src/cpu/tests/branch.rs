@@ -256,7 +256,7 @@ fn jp_deref_hl_sets_pc_to_hl() {
 fn call_jumps_to_target() {
     let mut bench = TestBench::default();
     let target = 0x1234;
-    bench.trace_call(target);
+    bench.trace_call(None, target);
     assert_eq!(bench.cpu.data.pc, target)
 }
 
@@ -264,37 +264,74 @@ fn call_jumps_to_target() {
 fn call_decrements_sp_by_2() {
     let mut bench = TestBench::default();
     let sp = bench.cpu.data.sp;
-    bench.trace_call(0x1234);
+    bench.trace_call(None, 0x1234);
     assert_eq!(bench.cpu.data.sp, sp.wrapping_sub(2))
 }
 
 #[test]
 fn call_bus_activity() {
     let mut bench = TestBench::default();
-    bench.trace_call(0x1234);
+    bench.trace_call(None, 0x1234);
     assert_eq!(bench.trace, bench.expected)
 }
 
 #[test]
 fn ret_after_call() {
     let mut bench = TestBench::default();
-    bench.trace_call(0x1234);
+    bench.trace_call(None, 0x1234);
     bench.trace_ret(0x5678);
     assert_eq!(bench.trace, bench.expected)
 }
 
+#[test]
+fn branching_call_nz_nn_jumps_to_target() {
+    let mut bench = TestBench::default();
+    bench.assert_branching_call_jumps_to_target(Some(Cc::Nz))
+}
+
+#[test]
+fn non_branching_call_nz_nn_does_not_jump_to_target() {
+    let mut bench = TestBench::default();
+    bench.assert_non_branching_call_does_not_jump_to_target(Cc::Nz);
+}
+
 impl TestBench {
-    fn trace_call(&mut self, target: u16) {
+    fn assert_branching_call_jumps_to_target(&mut self, cc: Option<Cc>) {
+        if let Some(cc) = cc {
+            self.set_condition_flag(cc)
+        }
+        let target = 0x1234;
+        self.trace_call(cc, target);
+        assert_eq!(self.cpu.data.pc, target)
+    }
+
+    fn trace_call(&mut self, cc: Option<Cc>, target: u16) {
         let sp = self.cpu.data.sp;
-        self.trace_fetch(self.cpu.data.pc, &encode_call(target));
+        self.trace_fetch(self.cpu.data.pc, &encode_call(cc, target));
         self.trace_bus_no_op();
         self.trace_bus_write(sp.wrapping_sub(1), high_byte(self.cpu.data.pc));
         self.trace_bus_write(sp.wrapping_sub(2), low_byte(self.cpu.data.pc));
     }
+
+    fn assert_non_branching_call_does_not_jump_to_target(&mut self, cc: Cc) {
+        self.set_condition_flag(!cc);
+        let encoding = encode_call(Some(cc), 0x1234);
+        self.trace_fetch(self.cpu.data.pc, &encoding);
+        self.trace_nop();
+        assert_eq!(self.cpu.data.pc, encoding.len() as u16 + 1)
+    }
 }
 
-fn encode_call(target: u16) -> Vec<u8> {
-    vec![0xcd, low_byte(target), high_byte(target)]
+fn encode_call(cc: Option<Cc>, target: u16) -> Vec<u8> {
+    vec![
+        match cc {
+            None => 0xcd,
+            Some(Cc::Nz) => 0xc4,
+            _ => unimplemented!(),
+        },
+        low_byte(target),
+        high_byte(target),
+    ]
 }
 
 #[test]
