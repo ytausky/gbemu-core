@@ -216,13 +216,13 @@ impl<'a> RunView<'a, InstructionExecutionState> {
         match self.run.m_cycle {
             M2 => self.read_immediate(),
             M3 => {
-                self.state.data = self.state.bus_data.unwrap();
+                self.state.z = self.state.bus_data;
                 self.read_immediate()
             }
-            M4 => self.bus_read(u16::from_be_bytes([
-                self.state.bus_data.unwrap(),
-                self.state.data,
-            ])),
+            M4 => {
+                self.state.w = self.state.bus_data;
+                self.bus_read(self.state.wz())
+            }
             M5 => {
                 self.basic.a = self.state.bus_data.unwrap();
                 self.execute_m1()
@@ -235,13 +235,13 @@ impl<'a> RunView<'a, InstructionExecutionState> {
         match self.run.m_cycle {
             M2 => self.read_immediate(),
             M3 => {
-                self.state.data = self.state.bus_data.unwrap();
+                self.state.z = self.state.bus_data;
                 self.read_immediate()
             }
-            M4 => self.bus_write(
-                u16::from_be_bytes([self.state.bus_data.unwrap(), self.state.data]),
-                self.basic.a,
-            ),
+            M4 => {
+                self.state.w = self.state.bus_data;
+                self.bus_write(self.state.wz(), self.basic.a)
+            }
             M5 => self.execute_m1(),
             _ => unreachable!(),
         }
@@ -398,14 +398,14 @@ impl<'a> RunView<'a, InstructionExecutionState> {
         match self.run.m_cycle {
             M2 => self.read_immediate(),
             M3 => {
-                self.state.addr = self.state.bus_data.unwrap() as u16;
+                self.state.z = self.state.bus_data;
                 self.read_immediate()
             }
             M4 => {
-                self.state.addr |= (self.state.bus_data.unwrap() as u16) << 8;
-                self.bus_write(self.state.addr, low_byte(self.basic.sp))
+                self.state.w = self.state.bus_data;
+                self.bus_write(self.state.wz(), low_byte(self.basic.sp))
             }
-            M5 => self.bus_write(self.state.addr + 1, high_byte(self.basic.sp)),
+            M5 => self.bus_write(self.state.wz() + 1, high_byte(self.basic.sp)),
             M6 => self.execute_m1(),
             _ => unreachable!(),
         }
@@ -482,13 +482,13 @@ impl<'a> RunView<'a, InstructionExecutionState> {
         match self.run.m_cycle {
             M2 => self.read_immediate(),
             M3 => {
-                self.state.data = self.state.bus_data.unwrap();
+                self.state.z = self.state.bus_data;
                 self.read_immediate()
             }
             M4 => {
                 if cc.map(|cc| self.evaluate_condition(cc)).unwrap_or(true) {
-                    self.basic.pc =
-                        u16::from_be_bytes([self.state.bus_data.unwrap(), self.state.data]);
+                    self.state.w = self.state.bus_data;
+                    self.basic.pc = self.state.wz();
                     None
                 } else {
                     self.execute_m1()
@@ -530,18 +530,17 @@ impl<'a> RunView<'a, InstructionExecutionState> {
         match self.run.m_cycle {
             M2 => self.read_immediate(),
             M3 => {
-                self.state.data = self.state.bus_data.unwrap();
+                self.state.z = self.state.bus_data;
                 self.read_immediate()
             }
             M4 => {
-                self.state.addr =
-                    u16::from_be_bytes([self.state.bus_data.unwrap(), self.state.data]);
+                self.state.w = self.state.bus_data;
                 None
             }
             M5 => self.push_byte(high_byte(self.basic.pc)),
             M6 => {
                 let pc = self.basic.pc;
-                self.basic.pc = self.state.addr;
+                self.basic.pc = self.state.wz();
                 self.push_byte(low_byte(pc))
             }
             M7 => self.execute_m1(),
@@ -553,11 +552,12 @@ impl<'a> RunView<'a, InstructionExecutionState> {
         match self.run.m_cycle {
             M2 => self.pop_byte(),
             M3 => {
-                self.state.data = self.state.bus_data.unwrap();
+                self.state.z = self.state.bus_data;
                 self.pop_byte()
             }
             M4 => {
-                self.basic.pc = u16::from_be_bytes([self.state.bus_data.unwrap(), self.state.data]);
+                self.state.w = self.state.bus_data;
+                self.basic.pc = self.state.wz();
                 None
             }
             M5 => self.execute_m1(),
@@ -620,6 +620,12 @@ impl<'a> RunView<'a, InstructionExecutionState> {
             Cc::Nc => !self.basic.f.cy,
             Cc::C => self.basic.f.cy,
         }
+    }
+}
+
+impl InstructionExecutionState {
+    fn wz(&self) -> u16 {
+        u16::from_be_bytes([self.w.unwrap(), self.z.unwrap()])
     }
 }
 

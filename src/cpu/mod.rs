@@ -79,12 +79,12 @@ enum Task {
 
 struct InstructionExecutionState {
     opcode: u8,
+    w: Option<u8>,
+    z: Option<u8>,
     bus_data: Option<u8>,
     read_ie: bool,
     standby: Option<Standby>,
     m1: bool,
-    data: u8,
-    addr: u16,
 }
 
 #[derive(Clone, Copy)]
@@ -376,12 +376,12 @@ impl InstructionExecutionState {
     fn new(opcode: u8) -> Self {
         Self {
             opcode,
+            w: None,
+            z: None,
             m1: false,
             bus_data: None,
             read_ie: false,
             standby: None,
-            addr: 0xffff,
-            data: 0xff,
         }
     }
 }
