@@ -110,6 +110,10 @@ impl Default for TestBench {
 }
 
 impl TestBench {
+    fn trace_nop(&mut self) {
+        self.trace_fetch(self.cpu.data.pc, &[NOP])
+    }
+
     fn trace_ret(&mut self, addr: u16) {
         let sp = self.cpu.data.sp;
         self.trace_fetch(self.cpu.data.pc, &[RET]);

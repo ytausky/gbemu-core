@@ -98,7 +98,8 @@ impl TestBench {
         let encoding = encode_jp(Some(cc), 0x1234);
         self.set_condition_flag(!cc);
         self.trace_fetch(self.cpu.data.pc, &encoding);
-        assert_eq!(self.cpu.data.pc, encoding.len() as u16)
+        self.trace_nop();
+        assert_eq!(self.cpu.data.pc, encoding.len() as u16 + 1)
     }
 }
 
@@ -133,11 +134,105 @@ fn jr_e_with_carry() {
     assert_eq!(bench.cpu.data.pc, 0x1100)
 }
 
+#[test]
+fn branching_jr_nz_e_jumps_to_target() {
+    let mut bench = TestBench::default();
+    bench.assert_branching_jr_jumps_to_target(Some(Cc::Nz))
+}
+
+#[test]
+fn ret_after_branching_jr_nz_e() {
+    let mut bench = TestBench::default();
+    bench.trace_branching_jr(Some(Cc::Nz), 0x42);
+    bench.trace_ret(0x5678);
+    assert_eq!(bench.trace, bench.expected)
+}
+
+#[test]
+fn non_branching_jr_nz_e_does_not_jump_to_target() {
+    let mut bench = TestBench::default();
+    bench.assert_non_branching_jr_does_not_jump_to_target(Cc::Nz)
+}
+
+#[test]
+fn ret_after_non_branching_jr_nz_e() {
+    let mut bench = TestBench::default();
+    bench.set_condition_flag(!Cc::Nz);
+    bench.trace_fetch(bench.cpu.data.pc, &encode_jr(Some(Cc::Nz), 0x42));
+    bench.trace_ret(0x5678);
+    assert_eq!(bench.trace, bench.expected)
+}
+
+#[test]
+fn branching_jr_z_e_jumps_to_target() {
+    let mut bench = TestBench::default();
+    bench.assert_branching_jr_jumps_to_target(Some(Cc::Z))
+}
+
+#[test]
+fn non_branching_jr_z_e_does_not_jump_to_target() {
+    let mut bench = TestBench::default();
+    bench.assert_non_branching_jr_does_not_jump_to_target(Cc::Z)
+}
+
+#[test]
+fn branching_jr_nc_e_jumps_to_target() {
+    let mut bench = TestBench::default();
+    bench.assert_branching_jr_jumps_to_target(Some(Cc::Nc))
+}
+
+#[test]
+fn non_branching_jr_nc_e_does_not_jump_to_target() {
+    let mut bench = TestBench::default();
+    bench.assert_non_branching_jr_does_not_jump_to_target(Cc::Nc)
+}
+
+#[test]
+fn branching_jr_c_e_jumps_to_target() {
+    let mut bench = TestBench::default();
+    bench.assert_branching_jr_jumps_to_target(Some(Cc::C))
+}
+
+#[test]
+fn non_branching_jr_c_e_does_not_jump_to_target() {
+    let mut bench = TestBench::default();
+    bench.assert_non_branching_jr_does_not_jump_to_target(Cc::C)
+}
+
+impl TestBench {
+    fn assert_branching_jr_jumps_to_target(&mut self, cc: Option<Cc>) {
+        let e = 0x42;
+        let offset = e as i8 as i16 as u16;
+        let expected_pc = self.cpu.data.pc.wrapping_add(offset).wrapping_add(2);
+        self.trace_branching_jr(cc, e);
+        assert_eq!(self.cpu.data.pc, expected_pc)
+    }
+
+    fn trace_branching_jr(&mut self, cc: Option<Cc>, e: u8) {
+        if let Some(cc) = cc {
+            self.set_condition_flag(cc)
+        }
+        self.trace_fetch(self.cpu.data.pc, &encode_jr(cc, e));
+        self.trace_bus_no_op()
+    }
+
+    fn assert_non_branching_jr_does_not_jump_to_target(&mut self, cc: Cc) {
+        let encoding = encode_jr(Some(cc), 0x42);
+        self.set_condition_flag(!cc);
+        self.trace_fetch(self.cpu.data.pc, &encoding);
+        self.trace_nop();
+        assert_eq!(self.cpu.data.pc, encoding.len() as u16 + 1)
+    }
+}
+
 fn encode_jr(cc: Option<Cc>, e: u8) -> Vec<u8> {
     vec![
         match cc {
             None => 0x18,
-            _ => unimplemented!(),
+            Some(Cc::Nz) => 0x20,
+            Some(Cc::Z) => 0x28,
+            Some(Cc::Nc) => 0x30,
+            Some(Cc::C) => 0x38,
         },
         e,
     ]

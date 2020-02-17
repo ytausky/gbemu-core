@@ -38,6 +38,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
     fn exec_instr(&mut self) -> Output {
         let bus = match split_opcode(self.state.opcode) {
             (0b00, 0b000, 0b000) => self.nop(),
+            (0b00, cc, 0b000) if cc & 0b100 > 0 => self.jr(Some((cc & 0b011).into())),
             (0b00, dest, 0b001) if dest & 0b001 == 0 => self.ld_dd_nn((dest >> 1).into()),
             (0b00, 0b000, 0b010) => self.ld_deref_bc_a(),
             (0b00, 0b110, 0b100) => self.inc_deref_hl(),
@@ -47,7 +48,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
             (0b00, 0b001, 0b000) => self.ld_deref_nn_sp(),
             (0b00, 0b001, 0b010) => self.ld_a_deref_bc(),
             (0b00, 0b010, 0b010) => self.ld_deref_de_a(),
-            (0b00, 0b011, 0b000) => self.jr_e(),
+            (0b00, 0b011, 0b000) => self.jr(None),
             (0b00, 0b011, 0b010) => self.ld_a_deref_de(),
             (0b00, 0b100, 0b010) => self.ld_deref_hli_a(),
             (0b00, 0b101, 0b010) => self.ld_a_deref_hli(),
@@ -497,13 +498,17 @@ impl<'a> RunView<'a, InstructionExecutionState> {
         }
     }
 
-    fn jr_e(&mut self) -> Option<BusActivity> {
+    fn jr(&mut self, cc: Option<Cc>) -> Option<BusActivity> {
         match self.run.m_cycle {
             M2 => self.read_immediate(),
             M3 => {
-                let e = self.state.bus_data.unwrap() as i8;
-                self.basic.pc = self.basic.pc.wrapping_add(e as i16 as u16);
-                None
+                if cc.map(|cc| self.evaluate_condition(cc)).unwrap_or(true) {
+                    let e = self.state.bus_data.unwrap() as i8;
+                    self.basic.pc = self.basic.pc.wrapping_add(e as i16 as u16);
+                    None
+                } else {
+                    self.execute_m1()
+                }
             }
             M4 => self.execute_m1(),
             _ => unreachable!(),
