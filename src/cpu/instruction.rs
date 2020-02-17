@@ -66,6 +66,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
             (0b11, src, 0b101) if src & 0b001 == 0 => self.push_qq((src >> 1).into()),
             (0b11, op, 0b110) => self.alu_op_n(op.into()),
             (0b11, 0b001, 0b001) => self.ret(),
+            (0b11, 0b001, 0b101) => self.call(),
             (0b11, 0b100, 0b000) => self.ld_deref_n_a(),
             (0b11, 0b100, 0b010) => self.ld_deref_c_a(),
             (0b11, 0b101, 0b001) => self.jp_deref_hl(),
@@ -522,6 +523,28 @@ impl<'a> RunView<'a, InstructionExecutionState> {
                 self.execute_m1()
             }
             _ => unreachable!(),
+        }
+    }
+
+    fn call(&mut self) -> Option<BusActivity> {
+        match self.run.m_cycle {
+            M2 => self.read_immediate(),
+            M3 => {
+                self.state.data = self.state.bus_data.unwrap();
+                self.read_immediate()
+            }
+            M4 => {
+                self.state.addr =
+                    u16::from_be_bytes([self.state.bus_data.unwrap(), self.state.data]);
+                None
+            }
+            M5 => self.push_byte(high_byte(self.basic.pc)),
+            M6 => {
+                let pc = self.basic.pc;
+                self.basic.pc = self.state.addr;
+                self.push_byte(low_byte(pc))
+            }
+            M7 => self.execute_m1(),
         }
     }
 

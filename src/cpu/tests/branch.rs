@@ -253,6 +253,43 @@ fn jp_deref_hl_sets_pc_to_hl() {
 }
 
 #[test]
+fn call_jumps_to_target() {
+    let mut bench = TestBench::default();
+    let target = 0x1234;
+    bench.trace_call(target);
+    assert_eq!(bench.cpu.data.pc, target)
+}
+
+#[test]
+fn call_decrements_sp_by_2() {
+    let mut bench = TestBench::default();
+    let sp = bench.cpu.data.sp;
+    bench.trace_call(0x1234);
+    assert_eq!(bench.cpu.data.sp, sp.wrapping_sub(2))
+}
+
+#[test]
+fn call_bus_activity() {
+    let mut bench = TestBench::default();
+    bench.trace_call(0x1234);
+    assert_eq!(bench.trace, bench.expected)
+}
+
+impl TestBench {
+    fn trace_call(&mut self, target: u16) {
+        let sp = self.cpu.data.sp;
+        self.trace_fetch(self.cpu.data.pc, &encode_call(target));
+        self.trace_bus_no_op();
+        self.trace_bus_write(sp.wrapping_sub(1), high_byte(self.cpu.data.pc));
+        self.trace_bus_write(sp.wrapping_sub(2), low_byte(self.cpu.data.pc));
+    }
+}
+
+fn encode_call(target: u16) -> Vec<u8> {
+    vec![0xcd, low_byte(target), high_byte(target)]
+}
+
+#[test]
 fn ret_jumps_to_target() {
     let mut bench = TestBench::default();
     let target = 0x5678;
