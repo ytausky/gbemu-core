@@ -545,6 +545,7 @@ impl<'a> RunView<'a, InstructionExecutionState> {
                 self.push_byte(low_byte(pc))
             }
             M7 => self.execute_m1(),
+            _ => unreachable!(),
         }
     }
 

@@ -275,6 +275,14 @@ fn call_bus_activity() {
     assert_eq!(bench.trace, bench.expected)
 }
 
+#[test]
+fn ret_after_call() {
+    let mut bench = TestBench::default();
+    bench.trace_call(0x1234);
+    bench.trace_ret(0x5678);
+    assert_eq!(bench.trace, bench.expected)
+}
+
 impl TestBench {
     fn trace_call(&mut self, target: u16) {
         let sp = self.cpu.data.sp;

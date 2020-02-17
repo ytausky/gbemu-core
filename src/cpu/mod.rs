@@ -317,6 +317,7 @@ enum MCycle {
     M5,
     M6,
     M7,
+    M8,
 }
 
 impl MCycle {
@@ -327,7 +328,8 @@ impl MCycle {
             M4 => M5,
             M5 => M6,
             M6 => M7,
-            M7 => unreachable!(),
+            M7 => M8,
+            M8 => unreachable!(),
         }
     }
 }
